@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NoticeSync 🎓✨
 
-## Getting Started
+**NoticeSync** is an AI-powered academic intelligence platform built for college students. It solves the problem of scattered college notices (syllabi, circulars, professor messages) by extracting, cross-referencing, and organizing academic events into a unified planner.
 
-First, run the development server:
+It leverages Google's **Gemma** open models and the **Gemini API** for advanced retrieval-augmented generation (RAG) and multi-document reasoning, deployed on **Next.js** with **Supabase**.
 
+---
+
+## 🌟 Key Features
+
+1. **Omni-Modal Ingestion**: Upload PDFs (syllabi), images (screenshots of circulars), or paste text (WhatsApp announcements).
+2. **AI Academic Reasoning (Gemma)**: Extracts structured academic events (exams, assignments, holidays) from unstructured text with confidence scores.
+3. **Multi-Document Memory & RAG**: Uses `pgvector` to remember past uploads. If a new circular postpones an exam from an old syllabus, Gemma detects the conflict and flags it for human review.
+4. **Human-in-the-Loop Review**: Allows students to quickly verify the AI's deductions, resolve conflicts, and confirm deadlines.
+5. **Smart Planner & Workload Analysis**: Visualizes the academic timeline, highlights upcoming crunch periods, and flags missing information.
+6. **"Ask NoticeSync" Chat**: A built-in RAG assistant to answer specific questions like *"When is my next DBMS lab?"* based on uploaded documents.
+7. **Demo Mode**: Run the app with `?demo=true` in the URL for a guaranteed, offline presentation flow.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js (App Router), React, Tailwind CSS
+- **AI Models**: Gemma 2 (via Gemini API) for reasoning, `text-embedding-004` for vector embeddings.
+- **Database**: Supabase (PostgreSQL with `pgvector`), Realtime subscriptions.
+- **Processing**: `pdf-parse`, `tesseract.js`.
+- **Observability**: Sentry (Error tracking), Langfuse (LLM Tracing).
+- **Design**: Custom deep-dark scientific aesthetics inspired by the Gemma visual language.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Prerequisites
+- Node.js (v18+)
+- pnpm
+- A Supabase Project
+- A Gemini API Key (or multiple for rotation)
+
+### 2. Installation
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <repo-url>
+cd noticesync
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Environment Setup
+Create a `.env.local` file in the root directory:
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+# Gemini AI
+GEMINI_API_KEY=your_gemini_api_key
+# Optional Fallbacks
+GEMINI_API_KEY_FALLBACK_1=your_fallback_key
+GEMINI_API_KEY_FALLBACK_2=your_fallback_key
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Observability (Optional)
+LANGFUSE_PUBLIC_KEY=your_langfuse_pk
+LANGFUSE_SECRET_KEY=your_langfuse_sk
+LANGFUSE_BASEURL=https://cloud.langfuse.com
+```
 
-## Learn More
+### 4. Database Setup
+Run the SQL script located in `supabase/schema.sql` in your Supabase SQL Editor to create the necessary tables (`documents`, `document_chunks`, `academic_events`, `processing_jobs`) and enable `pgvector`.
 
-To learn more about Next.js, take a look at the following resources:
+### 5. Run Locally
+```bash
+pnpm dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🧠 Architecture Overview
 
-## Deploy on Vercel
+NoticeSync uses a multi-stage reasoning pipeline:
+1. **Ingestion**: Raw files are parsed into text (OCR or PDF extraction).
+2. **Memory Building**: Text is chunked and embedded into Supabase `pgvector`.
+3. **Extraction**: Gemma extracts structured events (`AcademicEvent` schema).
+4. **Reasoning**: Each event is cross-referenced against the vector database to detect contradictions, postponements, or missing information.
+5. **Review & Persistence**: The user confirms the events, and they are saved to the timeline.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🤝 Contributing
+Built for the Hackathon. Feel free to fork and improve!
