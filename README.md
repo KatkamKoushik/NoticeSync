@@ -151,7 +151,7 @@ NoticeSync implements multi-tenant isolation and defense-in-depth security contr
 
 ### 1. Clone Repository and Install Dependencies
 ```bash
-git clone https://github.com/KatkamKoushik/project_hackathon.git noticesync
+git clone https://github.com/KatkamKoushik/NoticeSync.git noticesync
 cd noticesync
 pnpm install --frozen-lockfile
 ```
