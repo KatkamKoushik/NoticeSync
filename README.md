@@ -147,7 +147,7 @@ NoticeSync implements multi-tenant isolation and defense-in-depth security contr
 ## 6. Local Setup and Installation
 
 ### Prerequisites
-- Node.js version 20.x or higher
+- Node.js version 22.x or higher (Node 22.13+ required by pnpm 11)
 - Corepack or pnpm version 11.18.0 installed (`npm install -g pnpm@11.18.0`)
 - A Supabase project with the `pgvector` extension enabled
 
