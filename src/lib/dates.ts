@@ -3,7 +3,6 @@ import {
   isToday,
   isTomorrow,
   differenceInDays,
-  startOfWeek,
   endOfWeek,
   eachWeekOfInterval,
   parseISO,

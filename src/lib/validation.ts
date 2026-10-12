@@ -1,80 +1,159 @@
-import { isValid, parse } from 'date-fns';
+import { isValid, parse, format } from 'date-fns';
 import type { AcademicEvent, EventType, DeadlineChange, Importance } from './types';
 import { v4 as uuidv4 } from 'uuid';
+import { RawExtractedEventSchema, RawExtractedEvent } from './validation/schemas';
 
-const VALID_TYPES: EventType[] = ["Exam", "Assignment", "Notice"];
-const VALID_CHANGES: DeadlineChange[] = ["none", "extended", "postponed", "rescheduled", "moved_earlier", "cancelled", "unknown"];
-const VALID_IMPORTANCE: Importance[] = ["low", "medium", "high"];
-
-/**
- * Validates a YYYY-MM-DD date string.
- */
-export function isValidDateString(dateStr: string | null | undefined): boolean {
-  if (dateStr === null) return true; // null is valid for ambiguous dates
-  if (typeof dateStr !== 'string') return false;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
-  const parsed = parse(dateStr, 'yyyy-MM-dd', new Date());
-  return isValid(parsed);
+export interface DateValidationResult {
+  status: 'valid' | 'null_or_pending' | 'ambiguous' | 'impossible';
+  date: string | null;
+  reason?: string;
 }
 
 /**
- * Validates a single raw event object from AI output.
- * Returns a cleaned AcademicEvent or null if fundamentally invalid.
+ * Validates calendar dates deterministically against the Gregorian calendar.
+ * Distinguishes valid ISO dates, impossible dates (e.g. Feb 31, leap year errors),
+ * ambiguous text phrases (e.g. 'next Friday'), and null/pending dates.
+ */
+export function validateCalendarDate(dateStr: string | null | undefined): DateValidationResult {
+  if (dateStr === null || dateStr === undefined) {
+    return { status: 'null_or_pending', date: null, reason: 'Date not provided' };
+  }
+
+  const trimmed = dateStr.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.toLowerCase() === 'null' ||
+    trimmed.toLowerCase() === 'tbd' ||
+    trimmed.toLowerCase() === 'tba' ||
+    trimmed.toLowerCase() === 'pending'
+  ) {
+    return { status: 'null_or_pending', date: null, reason: 'Date is explicitly pending or TBD' };
+  }
+
+  // Check strict YYYY-MM-DD pattern
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return {
+      status: 'ambiguous',
+      date: null,
+      reason: `Ambiguous or non-ISO date format: "${trimmed}"`,
+    };
+  }
+
+  const [yearStr] = trimmed.split('-');
+  const year = parseInt(yearStr, 10);
+  if (year < 2020 || year > 2035) {
+    return {
+      status: 'impossible',
+      date: null,
+      reason: `Calendar year ${year} is outside plausible academic range`,
+    };
+  }
+
+  const parsed = parse(trimmed, 'yyyy-MM-dd', new Date());
+  if (!isValid(parsed) || format(parsed, 'yyyy-MM-dd') !== trimmed) {
+    return {
+      status: 'impossible',
+      date: null,
+      reason: `Impossible calendar date: "${trimmed}" does not exist in the calendar`,
+    };
+  }
+
+  return { status: 'valid', date: trimmed };
+}
+
+/**
+ * Backward-compatible helper checking whether a date string is valid or null.
+ */
+export function isValidDateString(dateStr: string | null | undefined): boolean {
+  const result = validateCalendarDate(dateStr);
+  return result.status === 'valid' || result.status === 'null_or_pending';
+}
+
+export interface DocumentContext {
+  documentId?: string;
+  documentTitle?: string;
+  chunkIndex?: number;
+  pageNumber?: number;
+}
+
+/**
+ * Validates a single raw event from AI output using strict schema validation
+ * and deterministic business logic.
  */
 export function validateEvent(
-  raw: Record<string, unknown>,
-  sourceType: "pdf" | "image" | "text"
+  raw: unknown,
+  sourceType: 'pdf' | 'image' | 'text',
+  docContext?: DocumentContext
 ): AcademicEvent | null {
-  // title
-  if (typeof raw.title !== 'string' || raw.title.trim().length === 0) return null;
-
-  // date (can be null)
-  let date: string | null = null;
-  if (typeof raw.date === 'string' && isValidDateString(raw.date)) {
-    date = raw.date;
+  const parseResult = RawExtractedEventSchema.safeParse(raw);
+  if (!parseResult.success) {
+    return null;
   }
 
-  // type
-  let eventType: EventType = "Notice";
-  if (typeof raw.type === 'string' && VALID_TYPES.includes(raw.type as EventType)) {
-    eventType = raw.type as EventType;
+  const data: RawExtractedEvent = parseResult.data;
+  const reviewReasons: string[] = [];
+
+  // 1. Calendar Date Validation
+  const dateResult = validateCalendarDate(data.date);
+  let finalDate: string | null = null;
+  let additionalInfoPending = data.additionalInformationPending;
+
+  if (dateResult.status === 'valid') {
+    finalDate = dateResult.date;
+  } else {
+    finalDate = null;
+    additionalInfoPending = true;
+    reviewReasons.push(dateResult.reason || 'Date requires manual confirmation');
   }
 
-  // confidence
-  let confidence = 50;
-  if (typeof raw.confidence === 'number' && raw.confidence >= 1 && raw.confidence <= 100) {
-    confidence = Math.round(raw.confidence);
+  // 2. Confidence evaluation (events with confidence < 75 require review)
+  if (data.confidence < 75) {
+    reviewReasons.push(`Low confidence score (${data.confidence}%)`);
   }
 
-  // importance
-  let importance: Importance = "medium";
-  if (typeof raw.importance === 'string' && VALID_IMPORTANCE.includes(raw.importance as Importance)) {
-    importance = raw.importance as Importance;
+  // 3. Deadline Change evaluation
+  const deadlineChange: DeadlineChange = data.deadlineChange;
+  if (deadlineChange !== 'none' && deadlineChange !== 'unchanged') {
+    reviewReasons.push(`Deadline modification detected (${deadlineChange})`);
   }
 
-  // deadlineChange
-  let deadlineChange: DeadlineChange = "none";
-  if (typeof raw.deadlineChange === 'string' && VALID_CHANGES.includes(raw.deadlineChange as DeadlineChange)) {
-    deadlineChange = raw.deadlineChange as DeadlineChange;
+  // 4. Source Evidence Check
+  const sourceText = data.sourceText.trim();
+  if (sourceText.length === 0) {
+    reviewReasons.push('No direct source excerpt evidence provided by model');
+  }
+
+  // 5. Importance and Strict Deadlines
+  let importance: Importance = data.importance;
+  if (data.strictDeadline) {
+    importance = 'high';
   }
 
   const event: AcademicEvent = {
     id: uuidv4(),
-    title: raw.title.trim(),
-    date,
-    type: eventType,
-    description: typeof raw.description === 'string' ? raw.description.trim() : "",
-    confidence,
+    title: data.title.trim(),
+    date: finalDate,
+    type: data.type as EventType,
+    description: data.description.trim(),
+    confidence: data.confidence,
     importance,
-    actionRequired: Boolean(raw.actionRequired),
-    strictDeadline: Boolean(raw.strictDeadline),
+    priority: importance === 'high' ? 'High' : importance === 'medium' ? 'Medium' : 'Low',
+    actionRequired: Boolean(data.actionRequired),
+    strictDeadline: Boolean(data.strictDeadline),
     deadlineChange,
-    additionalInformationPending: Boolean(raw.additionalInformationPending),
-    sourceText: typeof raw.sourceText === 'string' ? raw.sourceText.trim() : "",
-    course: typeof raw.course === 'string' ? raw.course.trim() : null,
+    deadlineChangeEvidence: data.deadlineChangeEvidence || null,
+    additionalInformationPending: additionalInfoPending,
+    sourceText,
+    sourceExcerpt: sourceText,
+    course: data.course ? data.course.trim() : null,
+    location: data.location ? data.location.trim() : null,
     sourceType,
-    // if date is null, review is required regardless of confidence
-    needsReview: confidence < 70 || date === null,
+    documentId: docContext?.documentId || null,
+    documentTitle: docContext?.documentTitle || null,
+    chunkIndex: docContext?.chunkIndex ?? null,
+    pageNumber: docContext?.pageNumber ?? null,
+    needsReview: reviewReasons.length > 0,
+    reviewReason: reviewReasons.length > 0 ? reviewReasons.join('; ') : null,
   };
 
   return event;
@@ -85,16 +164,18 @@ export function validateEvent(
  */
 export function validateEvents(
   rawEvents: unknown[],
-  sourceType: "pdf" | "image" | "text"
+  sourceType: 'pdf' | 'image' | 'text',
+  docContext?: DocumentContext
 ): AcademicEvent[] {
+  if (!Array.isArray(rawEvents)) return [];
+
   const results: AcademicEvent[] = [];
   for (let i = 0; i < rawEvents.length; i++) {
-    const raw = rawEvents[i];
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue;
-    const validated = validateEvent(raw as Record<string, unknown>, sourceType);
+    const validated = validateEvent(rawEvents[i], sourceType, docContext);
     if (validated) {
       results.push(validated);
     }
   }
+
   return results;
 }

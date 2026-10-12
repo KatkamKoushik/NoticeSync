@@ -1,0 +1,32 @@
+{
+  "id": "test-05-ocr-corrupted-circular",
+  "split": "test",
+  "category": "ocr_noise",
+  "title": "Bio-Engineering Department Circular (Heavily Corrupted OCR)",
+  "sourceType": "image",
+  "inputText": "[OCR ENGINE SCAN OUTPUT - CONFIDENCE: LOW]\nD3P@RTM3NT OF B10-3NG1N33R1NG\nC0urse: B1O3O1 Computat1onal G3nom1cs\n\nAtt3nt1on R3searchers:\nTh3 G3nom1cs T3rm P@p3r & P1p3l1n3 C0d3 1s dU3 on 2O26-12-15 b3f0r3 m1dn1ght.\nSubm1ss1on v1a G1tHub r3p0s1t0ry.\n\nStric+ p3n@lty for l@t3 subm1ss10ns: 15% p3r d@y.",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "Genomics Term Paper & Pipeline Code",
+        "date": "2026-12-15",
+        "type": "Assignment",
+        "course": "BIO301",
+        "strictDeadline": true,
+        "needsReview": true,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "T3rm P@p3r"
+      }
+    ],
+    "shouldAbstainOrReviewAll": true,
+    "retrievalQueries": [
+      {
+        "query": "When is the computational genomics term paper due?",
+        "expectedKeywords": ["2026-12-15", "Term Paper", "GitHub"],
+        "description": "Verify retrieval from noisy OCR text"
+      }
+    ]
+  },
+  "notes": "Held-out test sample: tests OCR noise resilience. Must extract date 2026-12-15 while strictly enforcing needsReview=true."
+}

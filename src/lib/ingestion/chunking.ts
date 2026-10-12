@@ -3,13 +3,13 @@
  */
 
 export function chunkText(text: string, maxChunkSize = 1000, overlap = 200): string[] {
-  if (!text) return [];
+  if (!text || text.trim().length === 0) return [];
   
   const chunks: string[] = [];
   let startIndex = 0;
   
   while (startIndex < text.length) {
-    let endIndex = startIndex + maxChunkSize;
+    const endIndex = startIndex + maxChunkSize;
     
     if (endIndex >= text.length) {
       chunks.push(text.substring(startIndex));

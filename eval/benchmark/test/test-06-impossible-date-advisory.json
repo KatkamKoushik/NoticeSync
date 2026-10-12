@@ -1,0 +1,32 @@
+{
+  "id": "test-06-impossible-date-advisory",
+  "split": "test",
+  "category": "ambiguous_date",
+  "title": "PHY102 Physics Lab Makeup Session Notice",
+  "sourceType": "text",
+  "inputText": "DEPARTMENT OF APPLIED PHYSICS\nCourse: PHY102 Engineering Physics Practicals\n\nNotice for Absentee Students:\nThe makeup laboratory practical session for students with verified medical absences will be held on February 30, 2026 (Room 104, Physics Annex) from 09:00 to 12:00.\n\nAttendance is mandatory to obtain passing marks in the practical component.",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "PHY102 Makeup Laboratory Practical Session",
+        "date": null,
+        "type": "Exam",
+        "course": "PHY102",
+        "strictDeadline": false,
+        "needsReview": true,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Makeup laboratory practical"
+      }
+    ],
+    "shouldAbstainOrReviewAll": true,
+    "retrievalQueries": [
+      {
+        "query": "When is the makeup physics practical scheduled?",
+        "expectedKeywords": ["makeup", "practical", "Room 104"],
+        "description": "Locate makeup session details with impossible date flag"
+      }
+    ]
+  },
+  "notes": "Held-out test sample: contains non-existent calendar date (February 30, 2026). Pipeline must reject date, set date=null, and enforce needsReview=true. Accepting 2026-02-30 is a critical validation failure."
+}

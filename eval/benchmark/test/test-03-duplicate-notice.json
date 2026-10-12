@@ -1,0 +1,43 @@
+{
+  "id": "test-03-duplicate-notice",
+  "split": "test",
+  "category": "duplicate_notice",
+  "title": "OFFICIAL COPY: CS402 Computer Networks End-Semester Assessment Schedule",
+  "sourceType": "text",
+  "inputText": "=== OFFICIAL COPY FOR STUDENT BULLETIN ===\nDEPARTMENT OF COMPUTER SCIENCE & ENGINEERING\nEnd-Semester Assessment Schedule -- Fall 2026\nCourse: CS402 Computer Networks\nCourse Coordinator: Dr. Vint Cerf\n\n1. Socket Programming Lab Project Demonstration:\n   Date: 2026-11-10\n   Time: 09:30 - 13:00\n   Venue: Networking Lab 2B\n   Requirement: Live demo of TCP chat server and packet capture report.\n\n2. Comprehensive Theory Final Examination:\n   Date: 2026-12-08\n   Time: 14:00 - 17:00\n   Venue: Examination Hall A\n   Scope: Chapters 1 to 7 (Physical layer through Application layer).\n   Admit card mandatory.\n===========================================",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "Socket Programming Lab Project Demonstration",
+        "date": "2026-11-10",
+        "type": "Assignment",
+        "course": "CS402",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Lab Project Demonstration"
+      },
+      {
+        "title": "Comprehensive Theory Final Examination",
+        "date": "2026-12-08",
+        "type": "Exam",
+        "course": "CS402",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Final Examination"
+      }
+    ],
+    "shouldAbstainOrReviewAll": false,
+    "retrievalQueries": [
+      {
+        "query": "What is the date for CS402 comprehensive theory final exam?",
+        "expectedKeywords": ["2026-12-08", "Examination Hall A"],
+        "description": "Verify retrieval from duplicate copy"
+      }
+    ]
+  },
+  "notes": "Held-out test sample: duplicate copy with cosmetic formatting variations. Evaluates deduplication hashing."
+}

@@ -3,6 +3,7 @@
 import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { AcademicEvent } from '@/lib/types';
+import { fetchWithAuth } from '@/lib/supabase/client';
 
 interface AcademicBriefProps {
   events: AcademicEvent[];
@@ -16,7 +17,7 @@ export default function AcademicBrief({ events }: AcademicBriefProps) {
   useEffect(() => {
     async function fetchBrief() {
       if (events.length === 0) {
-        setBrief("No events found to summarize.");
+        setBrief('No events found to summarize.');
         setLoading(false);
         return;
       }
@@ -24,22 +25,28 @@ export default function AcademicBrief({ events }: AcademicBriefProps) {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch('/api/brief', {
+        const res = await fetchWithAuth('/api/brief', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ events }),
         });
         
         if (!res.ok) {
-          throw new Error("Failed to generate brief");
+          if (res.status === 401) {
+            setBrief('Sign in to view personalized AI academic briefs for your synced events.');
+            setLoading(false);
+            return;
+          }
+          throw new Error('Failed to generate brief');
         }
         
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         
         setBrief(data.brief);
-      } catch (err: any) {
-        setError(err.message || 'Could not load academic brief.');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Could not load academic brief.';
+        setError(message);
       } finally {
         setLoading(false);
       }

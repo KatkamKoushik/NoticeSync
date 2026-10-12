@@ -1,0 +1,20 @@
+{
+  "id": "test-04-campus-parking-advisory",
+  "split": "test",
+  "category": "no_events",
+  "title": "Campus Transportation & Parking Lot Advisory",
+  "sourceType": "text",
+  "inputText": "CAMPUS SAFETY & TRANSPORTATION DEPARTMENT\nGeneral Circular: Parking Regulations for Fall Semester\n\nAll registered students, faculty, and campus visitors are reminded of the following campus vehicle guidelines:\n- Student vehicles must display valid Lot-C decal on front windshield at all times.\n- Campus speed limit is strictly enforced at 15 MPH.\n- Overnight parking in Faculty Lot-A is strictly prohibited.\n- Vehicles parked in fire lanes or handicap stalls without valid state permit will be towed at owner expense.\n\nFor visitor day passes, visit the campus security booth at Gate 1.",
+  "groundTruth": {
+    "expectedEvents": [],
+    "shouldAbstainOrReviewAll": true,
+    "retrievalQueries": [
+      {
+        "query": "Are there any academic exams mentioned in the campus parking circular?",
+        "expectedKeywords": [],
+        "description": "Verify zero academic deadlines retrieved"
+      }
+    ]
+  },
+  "notes": "Held-out test sample: administrative notice with no academic events or deadlines. Pipeline must return empty list."
+}

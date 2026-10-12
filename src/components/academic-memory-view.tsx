@@ -1,7 +1,8 @@
 'use client';
 
-import { Database, FileText, Image as ImageIcon, AlignLeft, Calendar } from 'lucide-react';
+import { Database, FileText, Image as ImageIcon, AlignLeft, Calendar, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { fetchWithAuth } from '@/lib/supabase/client';
 
 type Document = {
   id: string;
@@ -15,29 +16,43 @@ export default function AcademicMemoryView() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // For now we'll fetch from a dummy endpoint or use mock data until API is wired up.
-    // In Phase 4 we will wire up the /api/memory endpoint.
-    async function load() {
-      try {
-        const res = await fetch('/api/memory');
+    let active = true;
+    fetchWithAuth('/api/memory')
+      .then(async (res) => {
+        if (!active) return;
         if (res.ok) {
           const data = await res.json();
           setDocuments(data.documents || []);
         } else {
-          // fallback mock for UI
           setDocuments([
             { id: '1', title: 'DBMS Syllabus', source_type: 'pdf', created_at: new Date().toISOString() },
             { id: '2', title: 'Circular August', source_type: 'image', created_at: new Date().toISOString() },
           ]);
         }
-      } catch (e) {
+      })
+      .catch((e) => {
         console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetchWithAuth(`/api/memory?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDocuments((prev) => prev.filter((d) => d.id !== id));
+      }
+    } catch (err) {
+      console.error('Failed to delete document', err);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -67,15 +82,15 @@ export default function AcademicMemoryView() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {documents.map(doc => (
-            <div key={doc.id} className="p-4 rounded-xl bg-gray-900 border border-gray-800 flex flex-col gap-2 hover:border-gray-700 transition-colors cursor-pointer">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gray-800 text-gray-300">
+          {documents.map((doc) => (
+            <div key={doc.id} className="p-4 rounded-xl bg-gray-900 border border-gray-800 flex items-center justify-between gap-2 hover:border-gray-700 transition-colors">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 rounded-lg bg-gray-800 text-gray-300 shrink-0">
                   {doc.source_type === 'pdf' && <FileText size={18} />}
                   {doc.source_type === 'image' && <ImageIcon size={18} />}
                   {doc.source_type === 'text' && <AlignLeft size={18} />}
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h3 className="font-semibold text-gray-200 text-sm truncate max-w-[200px]">{doc.title}</h3>
                   <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
                     <Calendar size={10} />
@@ -83,6 +98,14 @@ export default function AcademicMemoryView() {
                   </p>
                 </div>
               </div>
+
+              <button
+                onClick={(e) => handleDelete(doc.id, e)}
+                title="Delete from memory"
+                className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
         </div>

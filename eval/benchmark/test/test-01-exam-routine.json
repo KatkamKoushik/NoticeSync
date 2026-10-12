@@ -1,0 +1,48 @@
+{
+  "id": "test-01-exam-routine",
+  "split": "test",
+  "category": "standard_syllabus",
+  "title": "CS402 Computer Networks End-Semester Timetable",
+  "sourceType": "text",
+  "inputText": "DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING\nEnd-Semester Assessment Schedule -- Fall 2026\nCourse: CS402 Computer Networks\nCourse Coordinator: Dr. Vint Cerf\n\n1. Socket Programming Lab Project Demonstration:\n   Date: 2026-11-10\n   Time: 09:30 - 13:00\n   Venue: Networking Lab 2B\n   Requirement: Live demo of TCP chat server and packet capture report.\n\n2. Comprehensive Theory Final Examination:\n   Date: 2026-12-08\n   Time: 14:00 - 17:00\n   Venue: Examination Hall A\n   Scope: Chapters 1 to 7 (Physical layer through Application layer).\n   Admit card mandatory.",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "Socket Programming Lab Project Demonstration",
+        "date": "2026-11-10",
+        "type": "Assignment",
+        "course": "CS402",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Lab Project Demonstration"
+      },
+      {
+        "title": "Comprehensive Theory Final Examination",
+        "date": "2026-12-08",
+        "type": "Exam",
+        "course": "CS402",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Final Examination"
+      }
+    ],
+    "shouldAbstainOrReviewAll": false,
+    "retrievalQueries": [
+      {
+        "query": "When is the CS402 final theory examination?",
+        "expectedKeywords": ["2026-12-08", "Examination Hall A", "Final Examination"],
+        "description": "Locate final theory exam date"
+      },
+      {
+        "query": "What are the requirements for CS402 lab project demonstration?",
+        "expectedKeywords": ["2026-11-10", "TCP chat server", "packet capture"],
+        "description": "Locate project requirements and date"
+      }
+    ]
+  },
+  "notes": "Held-out test sample: clean multi-milestone academic notice with two date-bearing events."
+}

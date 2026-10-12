@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Bell, Zap, Shield, ArrowRight, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Bell, Zap, ArrowRight, AlertCircle, Sparkles, CheckCircle2, UserCheck, LogIn } from 'lucide-react';
 import OmniInput from '@/components/omni-input';
 import ReviewEvent from '@/components/review-event';
 import Planner from '@/components/planner';
 import AIBackground from '@/components/ai-background';
-import type { AcademicEvent, ProcessingStage, InputMode } from '@/lib/types';
+import type { AcademicEvent, ProcessingStage } from '@/lib/types';
 import { useJobTracking } from '@/lib/useJobTracking';
+import { supabase, fetchWithAuth } from '@/lib/supabase/client';
 
 type AppView = 'input' | 'review' | 'success' | 'planner';
 
@@ -19,59 +20,95 @@ export default function Home() {
   const [confirmedEvents, setConfirmedEvents] = useState<AcademicEvent[]>([]);
   const [lastConfirmed, setLastConfirmed] = useState<AcademicEvent[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(() => (
+    typeof window !== 'undefined' ? window.location.search.includes('demo=true') : false
+  ));
+
   const jobState = useJobTracking(activeJobId);
 
-  // Sync job state with local UI stage when processing
+  // Check auth on mount
   useEffect(() => {
-    if (jobState) {
-      if (jobState.status === 'failed') {
-        setError(jobState.errorMessage || 'Processing failed.');
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user) {
+        setUser({ id: data.session.user.id, email: data.session.user.email });
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Sync job state when failed
+  const jobStatus = jobState?.status;
+  const jobErrorMessage = jobState?.errorMessage;
+
+  useEffect(() => {
+    if (jobStatus === 'failed') {
+      const timer = setTimeout(() => {
+        setError(jobErrorMessage || 'Processing failed.');
         setStage('ERROR');
         setActiveJobId(null);
-      }
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [jobState]);
+  }, [jobStatus, jobErrorMessage]);
 
-  const handleSubmit = useCallback(async (formData: FormData, mode: InputMode) => {
+  const handleSubmit = useCallback(async (formData: FormData) => {
     setError(null);
     setStage('EXTRACTING');
     
     try {
-      // Demo Mode Support
-      if (typeof window !== 'undefined' && window.location.search.includes('demo=true')) {
-        await new Promise(r => setTimeout(r, 1000));
+      // Demo Mode Support for offline presentations
+      if (typeof window !== 'undefined' && (window.location.search.includes('demo=true') || isDemoMode)) {
+        await new Promise((r) => setTimeout(r, 1000));
         setStage('AI_PROCESSING');
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 1500));
         setStage('VALIDATING');
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
         
         const demoEvents: AcademicEvent[] = [
           {
             id: 'demo-1',
             title: 'Artificial Intelligence Mid-1',
-            date: '2026-08-25T10:00:00Z',
-            type: 'exam',
+            date: '2026-08-25',
+            type: 'Exam',
             description: 'Mid-1 Exam for AI. Postponed until further notice.',
-            confidence: 0.95,
+            confidence: 95,
             importance: 'high',
             strictDeadline: true,
             deadlineChange: 'postponed',
             additionalInformationPending: true,
-            needsReview: true
+            actionRequired: true,
+            sourceText: 'Mid-1 examination postponed',
+            sourceType: 'pdf',
+            needsReview: true,
           },
           {
             id: 'demo-2',
             title: 'Data Warehousing Lab Record',
-            date: '2026-09-02T16:00:00Z',
-            type: 'assignment',
+            date: '2026-09-02',
+            type: 'Assignment',
             description: 'Lab record submission deadline.',
-            confidence: 0.9,
+            confidence: 90,
             importance: 'medium',
             strictDeadline: true,
             deadlineChange: 'none',
             additionalInformationPending: false,
-            needsReview: false
-          }
+            actionRequired: true,
+            sourceText: 'Lab record submission due September 2',
+            sourceType: 'pdf',
+            needsReview: false,
+          },
         ];
         
         setExtractedEvents(demoEvents);
@@ -80,20 +117,25 @@ export default function Home() {
         return;
       }
 
-      // 1. Create Job
-      const jobRes = await fetch('/api/jobs', { method: 'POST' });
+      // 1. Create Job with Authenticated Identity
+      const jobRes = await fetchWithAuth('/api/jobs', { method: 'POST' });
       const jobData = await jobRes.json();
-      if (!jobRes.ok) throw new Error(jobData.error || 'Failed to initialize job');
+      
+      if (!jobRes.ok) {
+        if (jobRes.status === 401) {
+          throw new Error('Authentication required for multi-user storage. Please sign in or enable Demo Mode.');
+        }
+        throw new Error(jobData.error || 'Failed to initialize job');
+      }
       
       const jobId = jobData.jobId;
       setActiveJobId(jobId);
-      
       formData.append('jobId', jobId);
 
       setStage('AI_PROCESSING');
 
-      // 2. Start Processing
-      const response = await fetch('/api/parse', {
+      // 2. Start Document Parsing
+      const response = await fetchWithAuth('/api/parse', {
         method: 'POST',
         body: formData,
       });
@@ -105,7 +147,7 @@ export default function Home() {
       }
 
       setStage('VALIDATING');
-      await new Promise((r) => setTimeout(r, 400)); // UI polish buffer
+      await new Promise((r) => setTimeout(r, 400));
 
       const events: AcademicEvent[] = data.events || [];
 
@@ -128,7 +170,7 @@ export default function Home() {
       setStage('ERROR');
       setActiveJobId(null);
     }
-  }, []);
+  }, [isDemoMode]);
 
   const handleConfirmEvents = (events: AcademicEvent[]) => {
     setConfirmedEvents((prev) => [...prev, ...events]);
@@ -136,11 +178,8 @@ export default function Home() {
     setView('success');
     setStage('SUCCESS');
     
-    // Auto transition to planner after 3.5 seconds
     setTimeout(() => {
       setView('planner');
-      // Keep stage as SUCCESS for the background pulse to gracefully fade, 
-      // or change to IDLE if preferred. IDLE is fine.
       setStage('IDLE');
     }, 3500);
   };
@@ -152,6 +191,20 @@ export default function Home() {
     setExtractedEvents([]);
   };
 
+  const toggleDemoMode = () => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (isDemoMode) {
+        url.searchParams.delete('demo');
+        setIsDemoMode(false);
+      } else {
+        url.searchParams.set('demo', 'true');
+        setIsDemoMode(true);
+      }
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
+
   const isProcessing = ['EXTRACTING', 'AI_PROCESSING', 'VALIDATING'].includes(stage);
 
   return (
@@ -159,23 +212,44 @@ export default function Home() {
       <AIBackground isProcessing={isProcessing} isSuccess={stage === 'SUCCESS'} />
       <div className="min-h-screen flex flex-col relative z-10">
         {/* Header */}
-        <header
-          className="px-6 py-4 bg-[#121317] sticky top-0 z-50"
-        >
+        <header className="px-6 py-4 bg-[#121317] sticky top-0 z-50 border-b border-white/5">
           <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/5 border border-white/10 shadow-[0_0_15px_rgba(79,125,245,0.1)]"
-              >
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/5 border border-white/10 shadow-[0_0_15px_rgba(79,125,245,0.1)]">
                 <Bell size={18} className="text-white" />
               </div>
               <span className="text-lg font-bold tracking-tight text-white/90">NoticeSync</span>
             </div>
             
-            {/* Elegant Gemma Badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-[#4f7df5]/30 backdrop-blur-md shadow-[0_0_10px_rgba(79,125,245,0.15)]">
-              <Sparkles size={14} className="text-[#4f7df5]" />
-              <span className="text-xs font-medium text-white/80">Powered by Gemma</span>
+            <div className="flex items-center gap-3">
+              {/* User / Demo Status */}
+              {user ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+                  <UserCheck size={13} />
+                  <span className="truncate max-w-[120px]">{user.email || 'Authenticated'}</span>
+                </div>
+              ) : isDemoMode ? (
+                <button
+                  onClick={toggleDemoMode}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 hover:bg-amber-500/20 transition-colors"
+                >
+                  <span>Demo Mode Active</span>
+                </button>
+              ) : (
+                <button
+                  onClick={toggleDemoMode}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 hover:bg-white/10 transition-colors"
+                >
+                  <LogIn size={13} />
+                  <span>Enable Demo</span>
+                </button>
+              )}
+
+              {/* Gemma Badge */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-[#4f7df5]/30 backdrop-blur-md shadow-[0_0_10px_rgba(79,125,245,0.15)]">
+                <Sparkles size={14} className="text-[#4f7df5]" />
+                <span className="text-xs font-medium text-white/80">Powered by Gemma</span>
+              </div>
             </div>
           </div>
         </header>
@@ -196,7 +270,7 @@ export default function Home() {
                       Turn scattered notices into one clear plan.
                     </p>
 
-                    {/* Feature pills (styled like Gemma action buttons) */}
+                    {/* Feature pills */}
                     <div className="flex flex-wrap justify-center gap-4 mt-8 mb-12">
                       {[
                         { icon: <Zap size={16} />, text: 'Upload Syllabi' },
@@ -207,7 +281,7 @@ export default function Home() {
                           key={i}
                           onClick={() => {
                             if (i === 2) {
-                              alert("Extract events first before syncing to calendar!");
+                              alert('Extract events first before syncing to calendar!');
                             } else {
                               document.getElementById('hidden-file-input')?.click();
                             }
@@ -237,24 +311,31 @@ export default function Home() {
 
                 <div id="omni-input-section" className="max-w-2xl mx-auto">
                   <OmniInput 
-              onSubmit={handleSubmit} 
-              stage={stage} 
-              jobState={jobState}
-            />    </div>
+                    onSubmit={handleSubmit} 
+                    stage={stage} 
+                    jobState={jobState}
+                  />
+                </div>
 
                 {/* Error state */}
                 {error && (
-                  <div
-                    className="max-w-2xl mx-auto card p-4 flex items-start gap-3 animate-fade-in-up border-[#ef4444]/50 bg-[#ef4444]/10"
-                  >
+                  <div className="max-w-2xl mx-auto card p-4 flex items-start gap-3 animate-fade-in-up border-[#ef4444]/50 bg-[#ef4444]/10 rounded-xl">
                     <AlertCircle size={20} className="shrink-0 mt-0.5 text-[#ef4444]" />
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm font-semibold text-[#ef4444]">
                         Something went wrong
                       </p>
                       <p className="text-sm mt-1 text-[#94a3b8]">
                         {error}
                       </p>
+                      {error.includes('Authentication required') && !isDemoMode && (
+                        <button
+                          onClick={toggleDemoMode}
+                          className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                        >
+                          Switch to Demo Mode
+                        </button>
+                      )}
                     </div>
                     <button
                       onClick={() => {
@@ -300,28 +381,22 @@ export default function Home() {
                 <h2 className="text-3xl font-bold text-white mb-8">{lastConfirmed.length} events found</h2>
                 
                 <div className="flex flex-col gap-4 text-center">
-                  {lastConfirmed.filter(e => e.strictDeadline).length > 0 && (
+                  {lastConfirmed.filter((e) => e.strictDeadline).length > 0 && (
                     <div className="text-[#94a3b8] flex items-center gap-2 justify-center">
                       <div className="w-2 h-2 rounded-full bg-[#ef4444]"></div>
-                      {lastConfirmed.filter(e => e.strictDeadline).length} strict deadline{lastConfirmed.filter(e => e.strictDeadline).length > 1 ? 's' : ''}
+                      {lastConfirmed.filter((e) => e.strictDeadline).length} strict deadline{lastConfirmed.filter((e) => e.strictDeadline).length > 1 ? 's' : ''}
                     </div>
                   )}
-                  {lastConfirmed.filter(e => e.deadlineChange).length > 0 && (
+                  {lastConfirmed.filter((e) => e.deadlineChange && e.deadlineChange !== 'none').length > 0 && (
                     <div className="text-[#94a3b8] flex items-center gap-2 justify-center">
                       <div className="w-2 h-2 rounded-full bg-[#f59e0b]"></div>
-                      {lastConfirmed.filter(e => e.deadlineChange).length} deadline change{lastConfirmed.filter(e => e.deadlineChange).length > 1 ? 's' : ''}
+                      {lastConfirmed.filter((e) => e.deadlineChange && e.deadlineChange !== 'none').length} deadline change{lastConfirmed.filter((e) => e.deadlineChange && e.deadlineChange !== 'none').length > 1 ? 's' : ''}
                     </div>
                   )}
-                  {lastConfirmed.filter(e => e.additionalInformationPending).length > 0 && (
+                  {lastConfirmed.filter((e) => e.additionalInformationPending).length > 0 && (
                     <div className="text-[#94a3b8] flex items-center gap-2 justify-center">
                       <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                      {lastConfirmed.filter(e => e.additionalInformationPending).length} information item{lastConfirmed.filter(e => e.additionalInformationPending).length > 1 ? 's' : ''} pending
-                    </div>
-                  )}
-                  {lastConfirmed.filter(e => !e.strictDeadline && !e.deadlineChange && !e.additionalInformationPending).length > 0 && (
-                    <div className="text-[#94a3b8] flex items-center gap-2 justify-center">
-                      <div className="w-2 h-2 rounded-full bg-[#4f7df5]"></div>
-                      {lastConfirmed.filter(e => !e.strictDeadline && !e.deadlineChange && !e.additionalInformationPending).length} standard event{lastConfirmed.filter(e => !e.strictDeadline && !e.deadlineChange && !e.additionalInformationPending).length > 1 ? 's' : ''}
+                      {lastConfirmed.filter((e) => e.additionalInformationPending).length} information item{lastConfirmed.filter((e) => e.additionalInformationPending).length > 1 ? 's' : ''} pending
                     </div>
                   )}
                 </div>
@@ -336,9 +411,7 @@ export default function Home() {
         </main>
 
         {/* Footer */}
-        <footer
-          className="mt-auto border-t px-4 sm:px-6 py-6 text-center text-xs border-white/5 text-[#64748b] bg-black/20 backdrop-blur-md"
-        >
+        <footer className="mt-auto border-t px-4 sm:px-6 py-6 text-center text-xs border-white/5 text-[#64748b] bg-black/20 backdrop-blur-md">
           NoticeSync — AI extracts. You decide. Built for Hack Fiesta Miami 2026.
         </footer>
       </div>

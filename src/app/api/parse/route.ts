@@ -1,42 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGemma, parseAiJson } from '@/lib/ai';
+import {
+  extractEventsWithSchemaRetry,
+  MalformedModelOutputError,
+} from '@/lib/ai';
 import { validateEvents } from '@/lib/validation';
-import type { AcademicEvent } from '@/lib/types';
-import { extractPdfText, extractImageText, normalizeText } from '@/lib/ingestion/extractors';
+import {
+  extractPdfWithProvenance,
+  extractImageText,
+  normalizeText,
+  CorruptFileError,
+  ExtractionTimeoutError,
+  PageProvenance,
+} from '@/lib/ingestion/extractors';
 import { chunkText } from '@/lib/ingestion/chunking';
 import { storeChunk } from '@/lib/rag/storage';
 import { augmentEventWithMemory } from '@/lib/ai/reasoning';
-import { supabaseServer } from '@/lib/supabase/server';
 import { logError, traceAiCall } from '@/lib/observability';
+import { getAuthenticatedUser, AuthError } from '@/lib/auth/server';
+import { enforceRateLimit } from '@/lib/security/rateLimit';
+import { isValidUuid, sanitizeFileName, safeErrorResponse } from '@/lib/validation/security';
+import { supabaseServer } from '@/lib/supabase/server';
+import { computeContentHash, computeEventDedupHash } from '@/lib/ingestion/hash';
+import {
+  evaluateJobCompletion,
+  updateJobState,
+  PipelineCompletionMetrics,
+} from '@/lib/jobs/stateMachine';
+import { createConcurrencyLimiter } from '@/lib/resilience/retry';
 
 export const runtime = 'nodejs';
 
-const MAX_PDF_SIZE = 10 * 1024 * 1024;
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_TEXT_LENGTH = 10000;
 const PDF_TYPES = ['application/pdf'];
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
-async function updateJob(jobId: string, step: string, progress: number, status: 'processing' | 'completed' | 'failed' = 'processing', errorMsg?: string) {
-  if (!jobId) return;
-  await supabaseServer.from('processing_jobs').update({
-    current_step: step,
-    progress,
-    status,
-    error_message: errorMsg || null,
-    updated_at: new Date().toISOString()
-  }).eq('id', jobId);
-}
-
 export async function POST(req: NextRequest) {
-  let jobId = '';
-  // Hardcoded for demo; in production use Auth
-  const userId = '00000000-0000-0000-0000-000000000000'; 
+  let activeJobId: string | null = null;
+  let verifiedUserId: string | null = null;
 
   try {
+    // 1. Authenticate user from server session
+    const session = await getAuthenticatedUser(req);
+    verifiedUserId = session.user.id;
+    const db = session.userClient || supabaseServer;
+
+    // 2. Enforce Rate Limit (10 parses per minute per user)
+    const rateLimitResponse = enforceRateLimit(`parse:${verifiedUserId}`, 10);
+    if (rateLimitResponse) return rateLimitResponse;
+
+    // 3. Parse and validate FormData
     const formData = await req.formData();
-    jobId = formData.get('jobId') as string;
-    
+    const jobIdParam = formData.get('jobId');
+    if (typeof jobIdParam === 'string' && isValidUuid(jobIdParam)) {
+      activeJobId = jobIdParam;
+
+      // Verify that this job actually belongs to the authenticated user
+      const { data: job, error: jobError } = await db
+        .from('processing_jobs')
+        .select('id, user_id, status')
+        .eq('id', activeJobId)
+        .eq('user_id', verifiedUserId)
+        .single();
+
+      if (jobError || !job) {
+        return NextResponse.json({ error: 'Job not found or access denied.' }, { status: 403 });
+      }
+    }
+
     const pdfFile = formData.get('pdf') as File | null;
     const imageFile = formData.get('image') as File | null;
     const textInput = formData.get('text') as string | null;
@@ -44,24 +76,53 @@ export async function POST(req: NextRequest) {
     let extractedText = '';
     let sourceType: 'pdf' | 'image' | 'text' = 'text';
     let title = 'Pasted Text';
+    let pageProvenance: PageProvenance[] = [];
 
-    await updateJob(jobId, 'Extracting text...', 10);
+    if (activeJobId) {
+      await updateJobState({
+        jobId: activeJobId,
+        userId: verifiedUserId,
+        step: 'Extracting text...',
+        progress: 10,
+        status: 'processing',
+        client: db,
+      });
+    }
 
     // --- PDF ---
-    if (pdfFile) {
+    if (pdfFile && pdfFile instanceof File) {
       sourceType = 'pdf';
-      title = pdfFile.name;
-      if (!PDF_TYPES.includes(pdfFile.type)) throw new Error('Please upload a valid PDF file.');
-      if (pdfFile.size > MAX_PDF_SIZE) throw new Error('PDF file is too large. Maximum size is 10MB.');
+      title = sanitizeFileName(pdfFile.name, 'Uploaded Syllabus.pdf');
+      if (!PDF_TYPES.includes(pdfFile.type)) {
+        return NextResponse.json({ error: 'Please upload a valid PDF file.' }, { status: 400 });
+      }
+      if (pdfFile.size > MAX_PDF_SIZE) {
+        return NextResponse.json(
+          { error: 'PDF file is too large. Maximum size is 10MB.' },
+          { status: 400 }
+        );
+      }
       const buffer = Buffer.from(await pdfFile.arrayBuffer());
-      extractedText = await extractPdfText(buffer);
+      const pdfResult = await extractPdfWithProvenance(buffer);
+      extractedText = pdfResult.text;
+      pageProvenance = pdfResult.pages;
     }
     // --- Image ---
-    else if (imageFile) {
+    else if (imageFile && imageFile instanceof File) {
       sourceType = 'image';
-      title = imageFile.name;
-      if (!IMAGE_TYPES.includes(imageFile.type)) throw new Error('Please upload a valid image.');
-      if (imageFile.size > MAX_IMAGE_SIZE) throw new Error('Image file is too large. Maximum size is 5MB.');
+      title = sanitizeFileName(imageFile.name, 'Notice Screenshot.png');
+      if (!IMAGE_TYPES.includes(imageFile.type)) {
+        return NextResponse.json(
+          { error: 'Please upload a valid image file (PNG, JPEG, WebP).' },
+          { status: 400 }
+        );
+      }
+      if (imageFile.size > MAX_IMAGE_SIZE) {
+        return NextResponse.json(
+          { error: 'Image file is too large. Maximum size is 5MB.' },
+          { status: 400 }
+        );
+      }
       const buffer = Buffer.from(await imageFile.arrayBuffer());
       extractedText = await extractImageText(buffer);
     }
@@ -70,103 +131,366 @@ export async function POST(req: NextRequest) {
       sourceType = 'text';
       extractedText = normalizeText(textInput.trim().substring(0, MAX_TEXT_LENGTH));
     } else {
-      throw new Error('Please provide a PDF, image, or text input.');
+      return NextResponse.json(
+        { error: 'Please provide a PDF, image, or text input.' },
+        { status: 400 }
+      );
     }
 
     if (extractedText.length < 10) {
-      throw new Error('Not enough readable text was extracted.');
-    }
-
-    await updateJob(jobId, 'Building academic memory...', 30);
-    
-    // Store Document
-    const { data: doc, error: docError } = await supabaseServer.from('documents').insert({
-      user_id: userId,
-      title,
-      source_type: sourceType,
-      original_text: extractedText
-    }).select('id').single();
-
-    if (docError) throw docError;
-
-    // Chunk & Embed
-    const chunks = chunkText(extractedText);
-    for (let i = 0; i < chunks.length; i++) {
-      try {
-        await storeChunk({
-          userId,
-          documentId: doc.id,
-          content: chunks[i],
-          chunkIndex: i,
-          metadata: { title }
+      if (activeJobId) {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Failed',
+          progress: 0,
+          status: 'failed',
+          errorMessage: 'Not enough readable text was extracted from this document.',
+          client: db,
         });
-      } catch (e) {
-        logError(e, { step: 'storeChunk' });
-        // continue even if one chunk fails
       }
+      return NextResponse.json(
+        { error: 'Not enough readable text was extracted from this document.' },
+        { status: 400 }
+      );
     }
 
-    await updateJob(jobId, 'Gemma reasoning...', 50);
+    if (activeJobId) {
+      await updateJobState({
+        jobId: activeJobId,
+        userId: verifiedUserId,
+        step: 'Building academic memory...',
+        progress: 30,
+        status: 'processing',
+        client: db,
+      });
+    }
 
-    // Call Gemma
+    // 4. Store or Deduplicate Document under verified user_id
+    const contentHash = computeContentHash(verifiedUserId, sourceType, extractedText);
+    let docId: string;
+
+    const { data: existingDoc } = await db
+      .from('documents')
+      .select('id, title')
+      .eq('content_hash', contentHash)
+      .eq('user_id', verifiedUserId)
+      .single();
+
+    if (existingDoc) {
+      docId = existingDoc.id;
+    } else {
+      const { data: newDoc, error: docError } = await db
+        .from('documents')
+        .insert({
+          user_id: verifiedUserId,
+          title,
+          source_type: sourceType,
+          original_text: extractedText,
+          content_hash: contentHash,
+        })
+        .select('id')
+        .single();
+
+      if (docError || !newDoc) {
+        logError(new Error(docError?.message || 'Failed to create document'), {
+          userId: verifiedUserId,
+        });
+        throw new Error('Failed to record document.');
+      }
+      docId = newDoc.id;
+    }
+
+    // Link active job to document
+    if (activeJobId) {
+      await db
+        .from('processing_jobs')
+        .update({ document_id: docId })
+        .eq('id', activeJobId)
+        .eq('user_id', verifiedUserId);
+    }
+
+    // 5. Chunk & Embed with verified ownership & bounded concurrency
+    const chunks = chunkText(extractedText);
+    const chunkLimiter = createConcurrencyLimiter(3);
+    let storedChunks = 0;
+    let failedChunks = 0;
+
+    await Promise.all(
+      chunks.map((chunk, i) =>
+        chunkLimiter(async () => {
+          try {
+            let chunkPageNumber: number | undefined;
+            if (pageProvenance.length > 0) {
+              const chunkSnippet = chunk.substring(0, 40);
+              const foundPage = pageProvenance.find((p) => p.text.includes(chunkSnippet));
+              if (foundPage) chunkPageNumber = foundPage.pageNumber;
+            }
+
+            await storeChunk({
+              userId: verifiedUserId!,
+              documentId: docId,
+              content: chunk,
+              chunkIndex: i,
+              pageNumber: chunkPageNumber,
+              metadata: { title, pageNumber: chunkPageNumber },
+              client: db,
+            });
+            storedChunks++;
+          } catch (e) {
+            failedChunks++;
+            logError(e, { step: 'storeChunk', chunkIndex: i, docId });
+          }
+        })
+      )
+    );
+
+    if (activeJobId) {
+      await updateJobState({
+        jobId: activeJobId,
+        userId: verifiedUserId,
+        step: 'Gemma reasoning...',
+        progress: 50,
+        status: 'processing',
+        client: db,
+      });
+    }
+
+    // 6. Call AI Extraction with Strict Schema Validation and Repair Retry
     const textForAi = extractedText.substring(0, 15000);
     const startTime = Date.now();
-    const rawAiResponse = await callGemma(textForAi);
-    
-    traceAiCall('Event Extraction', textForAi, rawAiResponse, { latencyMs: Date.now() - startTime });
-    
-    const rawEvents = parseAiJson(rawAiResponse);
-    let events = validateEvents(rawEvents, sourceType);
+    const rawEvents = await extractEventsWithSchemaRetry(textForAi);
 
-    await updateJob(jobId, 'Detecting changes and conflicts...', 80);
+    traceAiCall(
+      'Event Extraction',
+      { length: textForAi.length },
+      { count: rawEvents.length },
+      {
+        latencyMs: Date.now() - startTime,
+        sourceType,
+      }
+    );
 
-    // Multi-document reasoning
-    const augmentedEvents = [];
+    let events = validateEvents(rawEvents, sourceType, {
+      documentId: docId,
+      documentTitle: title,
+    });
+
+    // Cross-reference source excerpts to find matching chunk indices and page numbers
     for (const event of events) {
-      const augmented = await augmentEventWithMemory(event, userId);
-      augmentedEvents.push(augmented);
-    }
-    events = augmentedEvents;
-
-    // Save events to Supabase
-    for (const event of events) {
-      const rawPriority = event.importance || event.priority || 'Medium';
-      const formattedPriority = String(rawPriority).charAt(0).toUpperCase() + String(rawPriority).slice(1).toLowerCase();
-      const validPriorities = ['Critical', 'High', 'Medium', 'Low'];
-      const dbPriority = validPriorities.includes(formattedPriority) ? formattedPriority : 'Medium';
-
-      const { error } = await supabaseServer.from('academic_events').insert({
-        user_id: userId,
-        document_id: doc.id,
-        title: event.title,
-        date: event.date,
-        type: event.type,
-        description: event.description,
-        confidence: event.confidence,
-        priority: dbPriority,
-        strict_deadline: event.strictDeadline,
-        deadline_change: event.deadlineChange !== 'none',
-        information_pending: event.additionalInformationPending,
-        status: event.needsReview ? 'pending_review' : 'confirmed'
-      });
-      if (error) {
-        logError(new Error(error.message));
+      if (event.sourceExcerpt && event.sourceExcerpt.length > 5) {
+        const cleanSnippet = event.sourceExcerpt.replace(/[.,;:]+$/, '').substring(0, 30);
+        const matchedIdx = chunks.findIndex((c) => c.includes(cleanSnippet));
+        if (matchedIdx !== -1) {
+          event.chunkIndex = matchedIdx;
+        }
+        if (pageProvenance.length > 0) {
+          const foundPage = pageProvenance.find((p) => p.text.includes(cleanSnippet));
+          if (foundPage) {
+            event.pageNumber = foundPage.pageNumber;
+          }
+        }
       }
     }
 
-    await updateJob(jobId, 'Academic plan ready', 100, 'completed');
+    if (activeJobId) {
+      await updateJobState({
+        jobId: activeJobId,
+        userId: verifiedUserId,
+        step: 'Detecting changes and conflicts...',
+        progress: 80,
+        status: 'processing',
+        client: db,
+      });
+    }
+
+    // 7. Multi-document reasoning with bounded concurrency
+    const reasoningLimiter = createConcurrencyLimiter(2);
+    const augmentedEvents = await Promise.all(
+      events.map((event) =>
+        reasoningLimiter(() => augmentEventWithMemory(event, verifiedUserId!))
+      )
+    );
+    events = augmentedEvents;
+
+    // 8. Save events strictly tied to verified user and document with idempotent dedup_hash
+    let storedEvents = 0;
+    let failedEvents = 0;
+
+    for (const event of events) {
+      const rawPriority = event.importance || 'Medium';
+      const formattedPriority =
+        String(rawPriority).charAt(0).toUpperCase() + String(rawPriority).slice(1).toLowerCase();
+      const validPriorities = ['Critical', 'High', 'Medium', 'Low'];
+      const dbPriority = validPriorities.includes(formattedPriority)
+        ? formattedPriority
+        : 'Medium';
+
+      const dedupHash = computeEventDedupHash(event);
+
+      const isDeadlineChanged =
+        event.deadlineChange !== 'none' && event.deadlineChange !== 'unchanged';
+
+      const { error: eventError } = await db.from('academic_events').upsert(
+        {
+          user_id: verifiedUserId,
+          document_id: docId,
+          dedup_hash: dedupHash,
+          title: event.title,
+          date: event.date,
+          type: event.type,
+          description: event.description,
+          confidence: event.confidence,
+          priority: dbPriority,
+          strict_deadline: event.strictDeadline,
+          deadline_change: isDeadlineChanged,
+          information_pending: event.additionalInformationPending,
+          status: event.needsReview ? 'pending_review' : 'confirmed',
+          source_excerpt: event.sourceExcerpt || event.sourceText,
+          location: event.location || null,
+          page_number: event.pageNumber ?? null,
+          chunk_index: event.chunkIndex ?? null,
+        },
+        {
+          onConflict: 'document_id,dedup_hash',
+        }
+      );
+
+      if (eventError) {
+        failedEvents++;
+        logError(new Error(eventError.message), { step: 'saveEvent', userId: verifiedUserId });
+      } else {
+        storedEvents++;
+      }
+    }
+
+    // 9. Evaluate Completion Criteria (Never silently swallow failures)
+    const metrics: PipelineCompletionMetrics = {
+      totalChunks: chunks.length,
+      storedChunks,
+      failedChunks,
+      totalEvents: events.length,
+      storedEvents,
+      failedEvents,
+    };
+    const finalStatus = evaluateJobCompletion(metrics);
+
+    if (activeJobId) {
+      if (finalStatus === 'completed') {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Academic plan ready',
+          progress: 100,
+          status: 'completed',
+          client: db,
+        });
+      } else if (finalStatus === 'partial_success') {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Completed with warnings',
+          progress: 90,
+          status: 'partial_success',
+          errorMessage: `Processing finished with partial items: ${failedChunks} chunk(s) and ${failedEvents} event(s) could not be recorded.`,
+          client: db,
+        });
+      } else {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Failed',
+          progress: 0,
+          status: 'failed',
+          errorMessage: 'Storage of document embeddings or academic events failed completely.',
+          client: db,
+        });
+      }
+    }
 
     return NextResponse.json({
       events,
-      message: events.length === 0 ? 'Gemma could not extract any dated academic events.' : `Found ${events.length} academic event(s).`,
+      documentId: docId,
+      jobStatus: finalStatus,
+      metrics: {
+        chunksStored: storedChunks,
+        chunksTotal: chunks.length,
+        eventsStored: storedEvents,
+        eventsTotal: events.length,
+      },
+      message:
+        events.length === 0
+          ? 'Gemma could not extract any dated academic events.'
+          : `Processed ${events.length} academic event(s) (${storedEvents} saved).`,
     });
+  } catch (err: unknown) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
 
-  } catch (err: any) {
-    logError(err, { jobId });
-    await updateJob(jobId, 'Failed', 0, 'failed', err.message);
-    return NextResponse.json(
-      { error: err.message || 'An unexpected error occurred.' },
-      { status: err.status || 500 }
-    );
+    const clientDb = (await import('@/lib/supabase/server')).supabaseServer;
+
+    if (err instanceof CorruptFileError) {
+      if (activeJobId && verifiedUserId) {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Failed',
+          progress: 0,
+          status: 'failed',
+          errorMessage: err.message,
+          client: clientDb,
+        });
+      }
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    if (err instanceof ExtractionTimeoutError) {
+      if (activeJobId && verifiedUserId) {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Failed',
+          progress: 0,
+          status: 'failed',
+          errorMessage: err.message,
+          client: clientDb,
+        });
+      }
+      return NextResponse.json({ error: err.message }, { status: 504 });
+    }
+
+    if (err instanceof MalformedModelOutputError) {
+      if (activeJobId && verifiedUserId) {
+        await updateJobState({
+          jobId: activeJobId,
+          userId: verifiedUserId,
+          step: 'Failed',
+          progress: 0,
+          status: 'failed',
+          errorMessage: 'AI model extraction output failed strict schema validation.',
+          client: clientDb,
+        });
+      }
+      return NextResponse.json(
+        { error: 'AI model produced malformed output: ' + err.message },
+        { status: 422 }
+      );
+    }
+
+    if (activeJobId && verifiedUserId) {
+      await updateJobState({
+        jobId: activeJobId,
+        userId: verifiedUserId,
+        step: 'Failed',
+        progress: 0,
+        status: 'failed',
+        errorMessage: 'Processing encountered an unrecoverable error.',
+        client: clientDb,
+      });
+    }
+
+    logError(err, { route: '/api/parse', activeJobId });
+    return safeErrorResponse(err, 500, 'Failed to process document.');
   }
 }

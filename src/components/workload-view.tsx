@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, TrendingUp, AlertCircle, Sparkles } from 'lucide-react';
+import { AlertTriangle, TrendingUp, AlertCircle } from 'lucide-react';
 import type { AcademicEvent } from '@/lib/types';
 import { getWeeklyWorkload } from '@/lib/dates';
 

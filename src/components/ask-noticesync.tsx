@@ -2,37 +2,55 @@
 
 import { useState } from 'react';
 import { MessageSquare, Send, Bot, User, Loader2 } from 'lucide-react';
+import { fetchWithAuth } from '@/lib/supabase/client';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export default function AskNoticeSync() {
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = { id: Date.now().toString(), role: 'user', content: input };
+    setErrorMsg(null);
+    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetchWithAuth('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages })
+        body: JSON.stringify({ messages: newMessages }),
       });
 
-      if (!response.ok) throw new Error('API Error');
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Please sign in or start demo mode to chat with NoticeSync.');
+        }
+        if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please wait a moment before sending another message.');
+        }
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to get response from chat assistant.');
+      }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let done = false;
       let assistantContent = '';
 
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: '' }]);
+      setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'assistant', content: '' }]);
 
       while (!done) {
         if (!reader) break;
@@ -41,15 +59,17 @@ export default function AskNoticeSync() {
         if (value) {
           const chunk = decoder.decode(value, { stream: true });
           assistantContent += chunk;
-          setMessages(prev => {
+          setMessages((prev) => {
             const updated = [...prev];
             updated[updated.length - 1].content = assistantContent;
             return updated;
           });
         }
       }
-    } catch (error) {
-      console.error(error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Chat error';
+      setErrorMsg(msg);
+      console.error(msg);
     } finally {
       setIsLoading(false);
     }
@@ -67,7 +87,7 @@ export default function AskNoticeSync() {
           <div className="text-gray-500 text-sm h-full flex flex-col items-center justify-center text-center px-4">
             <MessageSquare size={32} className="mb-2 opacity-50" />
             <p>Ask anything about your academic schedule, deadlines, or conflicts.</p>
-            <p className="mt-2 opacity-70 text-xs">Example: "When is my DBMS lab record due?"</p>
+            <p className="mt-2 opacity-70 text-xs">Example: &quot;When is my DBMS lab record due?&quot;</p>
           </div>
         ) : (
           messages.map((m) => (
@@ -89,6 +109,11 @@ export default function AskNoticeSync() {
             <div className="text-sm py-2 px-4 rounded-lg bg-gray-800 text-gray-400 flex items-center gap-2">
               <Loader2 size={14} className="animate-spin" /> Thinking...
             </div>
+          </div>
+        )}
+        {errorMsg && (
+          <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded-lg border border-red-800/50">
+            {errorMsg}
           </div>
         )}
       </div>

@@ -1,0 +1,16 @@
+# Gitleaks Configuration for NoticeSync
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow mock tokens and deterministic test identifiers"
+paths = [
+  '''tests/helpers/testUtils\.ts''',
+  '''tests/fixtures/.*''',
+  '''\.env\.example''',
+]
+regexes = [
+  '''test-token-user-[ab]''',
+  '''placeholder-anon-key''',
+  '''placeholder-project''',
+]

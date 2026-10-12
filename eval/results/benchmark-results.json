@@ -1,0 +1,490 @@
+{
+  "metadata": {
+    "timestamp": "2026-10-12T13:38:53.098Z",
+    "benchmarkVersion": "v1.0.0",
+    "split": "all",
+    "mode": "offline",
+    "documentsCount": 11,
+    "llmModel": "openai/gpt-oss-20b",
+    "embeddingModel": "gemini-embedding-2 (768-dim)"
+  },
+  "noticeSync": {
+    "metrics": {
+      "totalDocuments": 11,
+      "totalGroundTruthEvents": 13,
+      "totalPredictedEvents": 13,
+      "extractionTP": 13,
+      "extractionFP": 0,
+      "extractionFN": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "dateBearingEventsCount": 11,
+      "dateExactMatches": 11,
+      "dateAccuracy": 1,
+      "typeMatches": 13,
+      "typeAccuracy": 1,
+      "deadlineChangeExpected": 2,
+      "deadlineChangeDetected": 2,
+      "deadlineChangePrecision": 1,
+      "deadlineChangeRecall": 1,
+      "conflictsExpected": 2,
+      "conflictsDetected": 2,
+      "conflictPrecision": 1,
+      "conflictRecall": 1,
+      "queriesCount": 11,
+      "recallAt1": 0.8182,
+      "recallAt3": 0.8182,
+      "mrr": 0.8182,
+      "reviewCount": 13,
+      "reviewRate": 1,
+      "falseConfirmationCount": 0,
+      "falseConfirmationRate": 0,
+      "avgLatencyMs": 1,
+      "maxLatencyMs": 6
+    },
+    "errors": []
+  },
+  "baseline": {
+    "metrics": {
+      "totalDocuments": 11,
+      "totalGroundTruthEvents": 13,
+      "totalPredictedEvents": 23,
+      "extractionTP": 10,
+      "extractionFP": 13,
+      "extractionFN": 3,
+      "precision": 0.4348,
+      "recall": 0.7692,
+      "f1": 0.5556,
+      "dateBearingEventsCount": 9,
+      "dateExactMatches": 3,
+      "dateAccuracy": 0.3333,
+      "typeMatches": 7,
+      "typeAccuracy": 0.7,
+      "deadlineChangeExpected": 2,
+      "deadlineChangeDetected": 0,
+      "deadlineChangePrecision": 1,
+      "deadlineChangeRecall": 0,
+      "conflictsExpected": 2,
+      "conflictsDetected": 0,
+      "conflictPrecision": 1,
+      "conflictRecall": 0,
+      "queriesCount": 11,
+      "recallAt1": 0.2727,
+      "recallAt3": 0.2727,
+      "mrr": 0.2727,
+      "reviewCount": 0,
+      "reviewRate": 0,
+      "falseConfirmationCount": 3,
+      "falseConfirmationRate": 1,
+      "avgLatencyMs": 0,
+      "maxLatencyMs": 1
+    },
+    "errors": [
+      {
+        "docId": "dev-01-cs201-syllabus",
+        "category": "standard_syllabus",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Strict submission deadline on the course portal.\" (2026-09-15)",
+        "predicted": {
+          "title": "Strict submission deadline on the course portal.",
+          "date": "2026-09-15",
+          "type": "Other",
+          "course": "CS201",
+          "strictDeadline": true,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Strict submission deadline on the course portal."
+        }
+      },
+      {
+        "docId": "dev-01-cs201-syllabus",
+        "category": "standard_syllabus",
+        "type": "DATE_MISMATCH",
+        "description": "Incorrect date for \"Midterm Theory Examination\". Expected: 2026-10-20, Got: 2026-09-15",
+        "expected": "2026-10-20",
+        "predicted": "2026-09-15"
+      },
+      {
+        "docId": "dev-01-cs201-syllabus",
+        "category": "standard_syllabus",
+        "type": "DATE_MISMATCH",
+        "description": "Incorrect date for \"Final Project Code Freeze\". Expected: 2026-12-05, Got: 2026-09-15",
+        "expected": "2026-12-05",
+        "predicted": "2026-09-15"
+      },
+      {
+        "docId": "dev-01-cs201-syllabus",
+        "category": "standard_syllabus",
+        "type": "TYPE_MISMATCH",
+        "description": "Type mismatch for \"Final Project Code Freeze\". Expected: Assignment, Got: Exam",
+        "expected": "Assignment",
+        "predicted": "Exam"
+      },
+      {
+        "docId": "dev-01-cs201-syllabus",
+        "category": "standard_syllabus",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"No late submissions accepted without Dean's approv\" (2026-09-15)",
+        "predicted": {
+          "title": "No late submissions accepted without Dean's approv",
+          "date": "2026-09-15",
+          "type": "Other",
+          "course": "CS201",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "No late submissions accepted without Dean's approval."
+        }
+      },
+      {
+        "docId": "dev-02-rescheduled-exam",
+        "category": "revised_notice",
+        "type": "DATE_MISMATCH",
+        "description": "Incorrect date for \"CS201 Midterm Theory Examination\". Expected: 2026-10-27, Got: 2026-10-02",
+        "expected": "2026-10-27",
+        "predicted": "2026-10-02"
+      },
+      {
+        "docId": "dev-02-rescheduled-exam",
+        "category": "revised_notice",
+        "type": "FALSE_CONFIRMATION",
+        "description": "CRITICAL SAFETY VIOLATION: Event \"CS201 Midterm Theory Examination\" required human review (revised_notice) but was falsely confirmed without warning.",
+        "expected": {
+          "needsReview": true
+        },
+        "predicted": {
+          "needsReview": false
+        }
+      },
+      {
+        "docId": "dev-02-rescheduled-exam",
+        "category": "revised_notice",
+        "type": "MISSED_CONFLICT",
+        "description": "Missed conflict for \"CS201 Midterm Theory Examination\". Prior memory contradiction was not flagged.",
+        "expected": {
+          "hasConflict": true
+        },
+        "predicted": {
+          "hasConflict": false
+        }
+      },
+      {
+        "docId": "dev-02-rescheduled-exam",
+        "category": "revised_notice",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Subject  Rescheduling of CS201 Midterm Theory Exam\" (2026-10-02)",
+        "predicted": {
+          "title": "Subject  Rescheduling of CS201 Midterm Theory Exam",
+          "date": "2026-10-02",
+          "type": "Exam",
+          "course": "CS201",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Subject: Rescheduling of CS201 Midterm Theory Examination."
+        }
+      },
+      {
+        "docId": "dev-02-rescheduled-exam",
+        "category": "revised_notice",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Due to the IEEE International Computing Symposium\" (2026-10-27)",
+        "predicted": {
+          "title": "Due to the IEEE International Computing Symposium",
+          "date": "2026-10-27",
+          "type": "Exam",
+          "course": "CS201",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Due to the IEEE International Computing Symposium being hosted in Hall 301, the CS201 Midterm Theory Examination previously scheduled on October 20, 2026 has been officially RESCHEDULED to 2026-10-27."
+        }
+      },
+      {
+        "docId": "dev-02-rescheduled-exam",
+        "category": "revised_notice",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Revised Exam Details\" (2026-10-02)",
+        "predicted": {
+          "title": "Revised Exam Details",
+          "date": "2026-10-02",
+          "type": "Exam",
+          "course": "CS201",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Revised Exam Details:"
+        }
+      },
+      {
+        "docId": "dev-03-ambiguous-tentative",
+        "category": "ambiguous_date",
+        "type": "FALSE_CONFIRMATION",
+        "description": "CRITICAL SAFETY VIOLATION: Event \"EE101 Practical Lab Examination Vivas\" required human review (ambiguous_date) but was falsely confirmed without warning.",
+        "expected": {
+          "needsReview": true
+        },
+        "predicted": {
+          "needsReview": false
+        }
+      },
+      {
+        "docId": "dev-03-ambiguous-tentative",
+        "category": "ambiguous_date",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"The practical exam vivas will tentatively be condu\" (undated)",
+        "predicted": {
+          "title": "The practical exam vivas will tentatively be condu",
+          "date": null,
+          "type": "Exam",
+          "course": "EE101",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "The practical exam vivas will tentatively be conducted during the second week of November 2026. Batch-wise room allocation and exact appointment slots will be released later on the notice board."
+        }
+      },
+      {
+        "docId": "dev-04-noisy-ocr",
+        "category": "ocr_noise",
+        "type": "MISSED_EVENT",
+        "description": "Failed to extract expected event: \"MATH201 Quiz 2\" (2026-11-05)",
+        "expected": {
+          "title": "MATH201 Quiz 2",
+          "date": "2026-11-05",
+          "type": "Exam",
+          "course": "MATH201",
+          "strictDeadline": true,
+          "needsReview": true,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceKeyword": "Qu1z 2"
+        }
+      },
+      {
+        "docId": "test-01-exam-routine",
+        "category": "standard_syllabus",
+        "type": "TYPE_MISMATCH",
+        "description": "Type mismatch for \"Socket Programming Lab Project Demonstration\". Expected: Assignment, Got: Project",
+        "expected": "Assignment",
+        "predicted": "Project"
+      },
+      {
+        "docId": "test-01-exam-routine",
+        "category": "standard_syllabus",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Requirement  Live demo of TCP chat server and pack\" (2026-11-10)",
+        "predicted": {
+          "title": "Requirement  Live demo of TCP chat server and pack",
+          "date": "2026-11-10",
+          "type": "Project",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Requirement: Live demo of TCP chat server and packet capture report."
+        }
+      },
+      {
+        "docId": "test-01-exam-routine",
+        "category": "standard_syllabus",
+        "type": "DATE_MISMATCH",
+        "description": "Incorrect date for \"Comprehensive Theory Final Examination\". Expected: 2026-12-08, Got: 2026-11-10",
+        "expected": "2026-12-08",
+        "predicted": "2026-11-10"
+      },
+      {
+        "docId": "test-01-exam-routine",
+        "category": "standard_syllabus",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Venue  Examination Hall A\" (2026-11-10)",
+        "predicted": {
+          "title": "Venue  Examination Hall A",
+          "date": "2026-11-10",
+          "type": "Exam",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Venue: Examination Hall A"
+        }
+      },
+      {
+        "docId": "test-02-conflicting-circular",
+        "category": "conflicting_deadline",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"CONTROLLER OF EXAMINATIONS    EMERGENCY NOTIFICATI\" (2026-10-25)",
+        "predicted": {
+          "title": "CONTROLLER OF EXAMINATIONS    EMERGENCY NOTIFICATI",
+          "date": "2026-10-25",
+          "type": "Exam",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "CONTROLLER OF EXAMINATIONS -- EMERGENCY NOTIFICATION"
+        }
+      },
+      {
+        "docId": "test-02-conflicting-circular",
+        "category": "conflicting_deadline",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Due to the Annual University Convocation ceremony\" (2026-10-25)",
+        "predicted": {
+          "title": "Due to the Annual University Convocation ceremony",
+          "date": "2026-10-25",
+          "type": "Exam",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Due to the Annual University Convocation ceremony being held on December 08, 2026, the CS402 Comprehensive Theory Final Examination has been RESCHEDULED to an earlier date."
+        }
+      },
+      {
+        "docId": "test-02-conflicting-circular",
+        "category": "conflicting_deadline",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Revised Exam Schedule\" (2026-10-25)",
+        "predicted": {
+          "title": "Revised Exam Schedule",
+          "date": "2026-10-25",
+          "type": "Exam",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Revised Exam Schedule:"
+        }
+      },
+      {
+        "docId": "test-02-conflicting-circular",
+        "category": "conflicting_deadline",
+        "type": "DATE_MISMATCH",
+        "description": "Incorrect date for \"CS402 Comprehensive Theory Final Examination\". Expected: 2026-12-01, Got: 2026-10-25",
+        "expected": "2026-12-01",
+        "predicted": "2026-10-25"
+      },
+      {
+        "docId": "test-02-conflicting-circular",
+        "category": "conflicting_deadline",
+        "type": "FALSE_CONFIRMATION",
+        "description": "CRITICAL SAFETY VIOLATION: Event \"CS402 Comprehensive Theory Final Examination\" required human review (conflicting_deadline) but was falsely confirmed without warning.",
+        "expected": {
+          "needsReview": true
+        },
+        "predicted": {
+          "needsReview": false
+        }
+      },
+      {
+        "docId": "test-02-conflicting-circular",
+        "category": "conflicting_deadline",
+        "type": "MISSED_CONFLICT",
+        "description": "Missed conflict for \"CS402 Comprehensive Theory Final Examination\". Prior memory contradiction was not flagged.",
+        "expected": {
+          "hasConflict": true
+        },
+        "predicted": {
+          "hasConflict": false
+        }
+      },
+      {
+        "docId": "test-03-duplicate-notice",
+        "category": "duplicate_notice",
+        "type": "TYPE_MISMATCH",
+        "description": "Type mismatch for \"Socket Programming Lab Project Demonstration\". Expected: Assignment, Got: Project",
+        "expected": "Assignment",
+        "predicted": "Project"
+      },
+      {
+        "docId": "test-03-duplicate-notice",
+        "category": "duplicate_notice",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Requirement  Live demo of TCP chat server and pack\" (2026-11-10)",
+        "predicted": {
+          "title": "Requirement  Live demo of TCP chat server and pack",
+          "date": "2026-11-10",
+          "type": "Project",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Requirement: Live demo of TCP chat server and packet capture report."
+        }
+      },
+      {
+        "docId": "test-03-duplicate-notice",
+        "category": "duplicate_notice",
+        "type": "DATE_MISMATCH",
+        "description": "Incorrect date for \"Comprehensive Theory Final Examination\". Expected: 2026-12-08, Got: 2026-11-10",
+        "expected": "2026-12-08",
+        "predicted": "2026-11-10"
+      },
+      {
+        "docId": "test-03-duplicate-notice",
+        "category": "duplicate_notice",
+        "type": "FALSE_POSITIVE",
+        "description": "Spurious event extracted from document: \"Venue  Examination Hall A\" (2026-11-10)",
+        "predicted": {
+          "title": "Venue  Examination Hall A",
+          "date": "2026-11-10",
+          "type": "Exam",
+          "course": "CS402",
+          "strictDeadline": false,
+          "needsReview": false,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceText": "Venue: Examination Hall A"
+        }
+      },
+      {
+        "docId": "test-05-ocr-corrupted-circular",
+        "category": "ocr_noise",
+        "type": "MISSED_EVENT",
+        "description": "Failed to extract expected event: \"Genomics Term Paper & Pipeline Code\" (2026-12-15)",
+        "expected": {
+          "title": "Genomics Term Paper & Pipeline Code",
+          "date": "2026-12-15",
+          "type": "Assignment",
+          "course": "BIO301",
+          "strictDeadline": true,
+          "needsReview": true,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceKeyword": "T3rm P@p3r"
+        }
+      },
+      {
+        "docId": "test-06-impossible-date-advisory",
+        "category": "ambiguous_date",
+        "type": "MISSED_EVENT",
+        "description": "Failed to extract expected event: \"PHY102 Makeup Laboratory Practical Session\" (pending)",
+        "expected": {
+          "title": "PHY102 Makeup Laboratory Practical Session",
+          "date": null,
+          "type": "Exam",
+          "course": "PHY102",
+          "strictDeadline": false,
+          "needsReview": true,
+          "deadlineChange": "none",
+          "hasConflict": false,
+          "sourceKeyword": "Makeup laboratory practical"
+        }
+      }
+    ]
+  }
+}

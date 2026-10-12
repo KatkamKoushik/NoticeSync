@@ -1,0 +1,20 @@
+{
+  "id": "dev-05-non-academic-menu",
+  "split": "dev",
+  "category": "irrelevant_document",
+  "title": "North Dining Hall Weekly Cafeteria Menu",
+  "sourceType": "text",
+  "inputText": "UNIVERSITY HOSPITALITY & DINING SERVICES\nNorth Campus Dining Hall -- Weekly Lunch & Dinner Menu\nOperating Hours: 07:30 - 20:30 Daily\n\nDaily Specials:\n- Monday: Tomato Basil Bisque, Grilled Cheddar Panini, Garden Greens\n- Tuesday: Roasted Chicken Taco Bowls, Mexican Corn, Black Beans\n- Wednesday: Stir-Fry Noodles with Tofu, Spring Rolls, Jasmine Rice\n- Thursday: Classic Beef Lasagna, Garlic Baguette, Caesar Salad\n- Friday: Beer-Battered Fish Fillet, Hand-Cut Chips, Tartar Sauce\n\nPlease note: Meal card swipes valid during designated service hours only. No outside glassware permitted.",
+  "groundTruth": {
+    "expectedEvents": [],
+    "shouldAbstainOrReviewAll": true,
+    "retrievalQueries": [
+      {
+        "query": "What academic exams are announced in the cafeteria menu?",
+        "expectedKeywords": [],
+        "description": "Verify negative retrieval / ungrounded abstention"
+      }
+    ]
+  },
+  "notes": "Irrelevant non-academic campus notice. Model must return 0 events. Any extracted event is counted as a False Positive."
+}

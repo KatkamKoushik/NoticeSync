@@ -1,7 +1,8 @@
-export type EventType = "Exam" | "Assignment" | "Notice";
+export type EventType = "Exam" | "Assignment" | "Notice" | "Task";
 
 export type DeadlineChange =
   | "none"
+  | "unchanged"
   | "extended"
   | "postponed"
   | "rescheduled"
@@ -19,15 +20,27 @@ export interface AcademicEvent {
   description: string;
   confidence: number; // 1-100
   importance: Importance;
+  priority?: string;
   actionRequired: boolean;
   strictDeadline: boolean;
   deadlineChange: DeadlineChange;
+  deadlineChangeEvidence?: string | null;
   additionalInformationPending: boolean;
   sourceText: string;
+  sourceExcerpt?: string;
+  pageNumber?: number | null;
+  chunkIndex?: number | null;
+  documentId?: string | null;
+  documentTitle?: string | null;
   course?: string | null;
+  location?: string | null;
   sourceType: "pdf" | "image" | "text";
   needsReview: boolean;
+  reviewReason?: string | null;
+  dedupHash?: string;
 }
+
+export type JobStatus = "pending" | "processing" | "completed" | "failed" | "partial_success";
 
 export type InputMode = "pdf" | "image" | "text";
 

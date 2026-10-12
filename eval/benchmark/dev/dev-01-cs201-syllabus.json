@@ -1,0 +1,59 @@
+{
+  "id": "dev-01-cs201-syllabus",
+  "split": "dev",
+  "category": "standard_syllabus",
+  "title": "CS201 Data Structures Fall 2026 Course Outline",
+  "sourceType": "text",
+  "inputText": "DEPARTMENT OF COMPUTER SCIENCE\nCourse: CS201 Data Structures & Algorithms (Fall 2026)\nInstructor: Prof. Ada Lovelace\n\nKey Dates & Milestone Schedule:\n1. Assignment 1 (Linked Lists & Binary Trees):\n   Due Date: 2026-09-15 at 23:59.\n   Strict submission deadline on the course portal.\n\n2. Midterm Theory Examination:\n   Date: 2026-10-20\n   Time: 14:00 - 16:00\n   Room: Hall 301. Attendance mandatory with student badge.\n\n3. Final Project Code Freeze:\n   Date: 2026-12-05\n   No late submissions accepted without Dean's approval.",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "Assignment 1 (Linked Lists & Binary Trees)",
+        "date": "2026-09-15",
+        "type": "Assignment",
+        "course": "CS201",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Linked Lists"
+      },
+      {
+        "title": "Midterm Theory Examination",
+        "date": "2026-10-20",
+        "type": "Exam",
+        "course": "CS201",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Midterm Theory Examination"
+      },
+      {
+        "title": "Final Project Code Freeze",
+        "date": "2026-12-05",
+        "type": "Assignment",
+        "course": "CS201",
+        "strictDeadline": true,
+        "needsReview": false,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Code Freeze"
+      }
+    ],
+    "shouldAbstainOrReviewAll": false,
+    "retrievalQueries": [
+      {
+        "query": "When is the CS201 midterm examination scheduled?",
+        "expectedKeywords": ["2026-10-20", "Hall 301", "Midterm"],
+        "description": "Locate midterm date and location"
+      },
+      {
+        "query": "What is the deadline for CS201 Assignment 1?",
+        "expectedKeywords": ["2026-09-15", "Linked Lists"],
+        "description": "Locate assignment 1 deadline"
+      }
+    ]
+  },
+  "notes": "Standard clean syllabus with three date-bearing events, course code CS201, strict deadlines, and zero conflicts."
+}

@@ -1,0 +1,32 @@
+{
+  "id": "dev-04-noisy-ocr",
+  "split": "dev",
+  "category": "ocr_noise",
+  "title": "MATH201 Scanned Circular (Simulated OCR Noise)",
+  "sourceType": "image",
+  "inputText": "=== SC@NNED ACADEM1C NOT1CE ===\nDEP@RTM3NT 0F M@THEM@T1CS\nC0urse: M@TH201 L1near Alg3bra\n\nAttent1on: Qu1z 2 Ann0uncem3nt\nD@te 0f Asse$$m3nt: 2O26-11-O5\nT1me: 11:00 AM -- R00m: 402B\nSc0pe: E1genv@lues & Matr1x D3c0mp0s1t1on.\n\nStric+ att3ndance req'd. Br1ng c@lculat0r.",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "MATH201 Quiz 2",
+        "date": "2026-11-05",
+        "type": "Exam",
+        "course": "MATH201",
+        "strictDeadline": true,
+        "needsReview": true,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "Qu1z 2"
+      }
+    ],
+    "shouldAbstainOrReviewAll": true,
+    "retrievalQueries": [
+      {
+        "query": "When is the Linear Algebra Quiz 2?",
+        "expectedKeywords": ["2026-11-05", "Quiz", "Room 402B"],
+        "description": "Locate quiz details through OCR noise"
+      }
+    ]
+  },
+  "notes": "Tests robustness to optical character recognition artifacts. Even if date is reconstructed, needsReview must be triggered due to OCR degraded confidence."
+}

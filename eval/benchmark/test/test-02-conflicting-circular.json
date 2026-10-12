@@ -1,0 +1,40 @@
+{
+  "id": "test-02-conflicting-circular",
+  "split": "test",
+  "category": "conflicting_deadline",
+  "title": "URGENT REVISION: CS402 Final Examination Schedule",
+  "sourceType": "text",
+  "inputText": "CONTROLLER OF EXAMINATIONS -- EMERGENCY NOTIFICATION\nRef: COE/2026/F-402\nDate: 2026-10-25\n\nAttention: Students enrolled in CS402 Computer Networks.\n\nDue to the Annual University Convocation ceremony being held on December 08, 2026, the CS402 Comprehensive Theory Final Examination has been RESCHEDULED to an earlier date.\n\nRevised Exam Schedule:\n- Date: 2026-12-01\n- Time: 14:00 - 17:00\n- Venue: Examination Hall C\n\nThe previously announced date of 2026-12-08 stands CANCELLED. All students must appear on December 01, 2026.",
+  "priorMemory": [
+    {
+      "title": "CS402 End-Semester Timetable Archive",
+      "content": "CS402 Comprehensive Theory Final Examination is scheduled on 2026-12-08 in Examination Hall A.",
+      "date": "2026-12-08",
+      "course": "CS402"
+    }
+  ],
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "CS402 Comprehensive Theory Final Examination",
+        "date": "2026-12-01",
+        "type": "Exam",
+        "course": "CS402",
+        "strictDeadline": true,
+        "needsReview": true,
+        "deadlineChange": "moved_earlier",
+        "hasConflict": true,
+        "sourceKeyword": "RESCHEDULED"
+      }
+    ],
+    "shouldAbstainOrReviewAll": false,
+    "retrievalQueries": [
+      {
+        "query": "Why was the CS402 final examination rescheduled?",
+        "expectedKeywords": ["2026-12-01", "Convocation", "December 08"],
+        "description": "Verify deadline conflict and rationale"
+      }
+    ]
+  },
+  "notes": "Held-out test sample: tests conflict detection against prior memory, deadline moved_earlier classification, and review enforcement."
+}

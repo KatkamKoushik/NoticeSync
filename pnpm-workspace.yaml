@@ -1,3 +1,14 @@
+overrides:
+  next: ^16.4.0
+  eslint-config-next: ^16.4.0
+  sharp: ^0.35.5
+  source-map-js: ^1.2.2
+  undici: ^7.29.1
+  fast-uri: ^3.1.7
+
 allowBuilds:
+  '@sentry/cli': true
+  esbuild: true
   sharp: false
+  tesseract.js: true
   unrs-resolver: false

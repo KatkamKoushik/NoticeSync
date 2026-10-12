@@ -5,7 +5,6 @@ import {
   CheckCircle,
   AlertTriangle,
   Edit3,
-  Trash2,
   Save,
   X,
 } from 'lucide-react';
@@ -35,6 +34,7 @@ export default function ReviewEvent({ events, onConfirm }: ReviewEventProps) {
       title: event.title,
       date: event.date,
       type: event.type,
+      location: event.location,
       description: event.description,
     });
   };
@@ -49,6 +49,7 @@ export default function ReviewEvent({ events, onConfirm }: ReviewEventProps) {
               title: editForm.title || e.title,
               date: editForm.date || e.date,
               type: editForm.type || e.type,
+              location: editForm.location !== undefined ? editForm.location : e.location,
               description: editForm.description || e.description,
               needsReview: false,
               confidence: Math.max(e.confidence, 80),
@@ -132,6 +133,14 @@ export default function ReviewEvent({ events, onConfirm }: ReviewEventProps) {
                   <option value="Notice">Notice</option>
                 </select>
               </div>
+              <input
+                type="text"
+                value={editForm.location || ''}
+                onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                className="w-full rounded-lg p-2.5 text-sm border"
+                style={{ backgroundColor: 'var(--bg-card-hover)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                placeholder="Venue / Room / Hall (optional)"
+              />
               <textarea
                 value={editForm.description || ''}
                 onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}

@@ -1,0 +1,40 @@
+{
+  "id": "dev-02-rescheduled-exam",
+  "split": "dev",
+  "category": "revised_notice",
+  "title": "URGENT CIRCULAR: Rescheduling of CS201 Midterm Exam",
+  "sourceType": "text",
+  "inputText": "CIRCULAR - OFFICE OF THE CONTROLLER OF EXAMINATIONS\nDate: 2026-10-02\nTo: All CS201 Students\n\nSubject: Rescheduling of CS201 Midterm Theory Examination.\n\nDue to the IEEE International Computing Symposium being hosted in Hall 301, the CS201 Midterm Theory Examination previously scheduled on October 20, 2026 has been officially RESCHEDULED to 2026-10-27.\n\nRevised Exam Details:\n- Date: 2026-10-27\n- Time: 14:00 - 16:00\n- Location: Main Auditorium\n\nAll students must make note of this revised schedule.",
+  "priorMemory": [
+    {
+      "title": "CS201 Syllabus Archive",
+      "content": "CS201 Midterm Theory Examination scheduled on 2026-10-20 in Hall 301.",
+      "date": "2026-10-20",
+      "course": "CS201"
+    }
+  ],
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "CS201 Midterm Theory Examination",
+        "date": "2026-10-27",
+        "type": "Exam",
+        "course": "CS201",
+        "strictDeadline": true,
+        "needsReview": true,
+        "deadlineChange": "rescheduled",
+        "hasConflict": true,
+        "sourceKeyword": "RESCHEDULED"
+      }
+    ],
+    "shouldAbstainOrReviewAll": false,
+    "retrievalQueries": [
+      {
+        "query": "Has the CS201 midterm exam date been modified?",
+        "expectedKeywords": ["2026-10-27", "RESCHEDULED", "October 20"],
+        "description": "Verify deadline revision evidence"
+      }
+    ]
+  },
+  "notes": "Tests detection of deadline revision (rescheduled) against prior memory and mandatory review gating."
+}

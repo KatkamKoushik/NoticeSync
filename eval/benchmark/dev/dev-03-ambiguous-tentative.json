@@ -1,0 +1,32 @@
+{
+  "id": "dev-03-ambiguous-tentative",
+  "split": "dev",
+  "category": "ambiguous_date",
+  "title": "EE101 Basic Electronics Practical Lab Examination Notice",
+  "sourceType": "text",
+  "inputText": "DEPARTMENT OF ELECTRICAL ENGINEERING\nCourse: EE101 Basic Electrical & Electronics Lab\nNotice for 1st Year Undergraduate Batches\n\nRegarding End-Semester Practical Lab Vivas:\nThe practical exam vivas will tentatively be conducted during the second week of November 2026. Batch-wise room allocation and exact appointment slots will be released later on the notice board.\n\nStudents are advised to prepare all lab journals and circuit schematics in advance.",
+  "groundTruth": {
+    "expectedEvents": [
+      {
+        "title": "EE101 Practical Lab Examination Vivas",
+        "date": null,
+        "type": "Exam",
+        "course": "EE101",
+        "strictDeadline": false,
+        "needsReview": true,
+        "deadlineChange": "none",
+        "hasConflict": false,
+        "sourceKeyword": "second week of November"
+      }
+    ],
+    "shouldAbstainOrReviewAll": true,
+    "retrievalQueries": [
+      {
+        "query": "What is the date for the EE101 lab exam?",
+        "expectedKeywords": ["second week of November", "released later", "tentatively"],
+        "description": "Retrieve tentative status"
+      }
+    ]
+  },
+  "notes": "Tests model ability to recognize ambiguous/pending dates: must set date=null, additionalInformationPending=true, and needsReview=true. Must not hallucinate an invented day."
+}

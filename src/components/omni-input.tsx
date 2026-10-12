@@ -7,9 +7,7 @@ import {
   MessageSquare,
   UploadCloud,
   X,
-  Loader2,
   Sparkles,
-  CheckCircle,
 } from 'lucide-react';
 import { type InputMode, type ProcessingStage } from '@/lib/types';
 import { type JobState } from '@/lib/useJobTracking';

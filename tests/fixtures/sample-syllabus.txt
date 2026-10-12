@@ -1,0 +1,19 @@
+DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING
+Course: CS301 Operating Systems (Fall 2026)
+Instructor: Dr. Alan Turing (Office: Tech Hall 401)
+
+COURSE SCHEDULE & IMPORTANT DEADLINES:
+1. Assignment 1 (Threads & Concurrency):
+   - Due Date: October 20, 2026 at 23:59
+   - Submission: University Portal. Late submissions penalized 10% per day.
+
+2. Midterm Examination:
+   - Date: November 15, 2026
+   - Time: 10:00 AM - 12:00 PM
+   - Location: Auditorium B
+   - Scope: Modules 1 through 4 (Virtual Memory, Process Synchronization, CPU Scheduling).
+   - Strict attendance required. Bring student ID and blue/black pen.
+
+3. Final Project Submission & Code Freeze:
+   - Date: December 05, 2026
+   - Strict deadline. No extensions granted without prior medical certificate.

@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Clock,
   Info,
+  MapPin,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
@@ -122,7 +123,22 @@ export default function EventCard({ event, onEdit, onDelete, compact }: EventCar
              <Info size={12} /> More info pending
           </span>
         )}
+        {event.location && (
+          <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 bg-blue-500/10 text-blue-400 font-medium">
+             <MapPin size={12} /> {event.location}
+          </span>
+        )}
       </div>
+
+      {/* Review Reason / Conflict Banner */}
+      {event.reviewReason && (
+        <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-400" />
+          <div>
+            <span className="font-semibold text-amber-200">Attention:</span> {event.reviewReason}
+          </div>
+        </div>
+      )}
 
       {/* Description */}
       {!compact && event.description && (
@@ -158,13 +174,13 @@ export default function EventCard({ event, onEdit, onDelete, compact }: EventCar
         </div>
 
         <div className="flex items-center gap-1.5">
-          {event.sourceText && (
+          {(event.sourceExcerpt || event.sourceText) && (
             <button
               onClick={() => setShowWhy(!showWhy)}
               className="text-xs font-medium px-2 py-1 rounded-md transition-colors flex items-center gap-1 bg-white/5 hover:bg-white/10"
               style={{ color: 'var(--text-muted)' }}
             >
-              Why?
+              Evidence
               {showWhy ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
           )}
@@ -186,10 +202,26 @@ export default function EventCard({ event, onEdit, onDelete, compact }: EventCar
         </div>
       </div>
 
-      {/* Why Section */}
-      {showWhy && event.sourceText && (
-        <div className="mt-2 p-3 rounded-md bg-white/5 border border-white/10 text-xs italic text-gray-400">
-          "{event.sourceText}"
+      {/* Why & Source Evidence Section */}
+      {showWhy && (event.sourceExcerpt || event.sourceText) && (
+        <div className="mt-2 p-3 rounded-md bg-white/5 border border-white/10 text-xs text-gray-300 space-y-1.5">
+          <div className="font-semibold text-gray-200 flex items-center justify-between">
+            <span>Verified Source Evidence</span>
+            {event.pageNumber && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">
+                Page {event.pageNumber}
+              </span>
+            )}
+            {event.chunkIndex !== undefined && !event.pageNumber && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">
+                Chunk {event.chunkIndex}
+              </span>
+            )}
+          </div>
+          <p className="italic text-gray-400">&ldquo;{event.sourceExcerpt || event.sourceText}&rdquo;</p>
+          {event.documentTitle && (
+            <p className="text-[11px] text-gray-500">Document: {event.documentTitle}</p>
+          )}
         </div>
       )}
 

@@ -6,7 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:unit": "tsx --test tests/ai/*.test.ts tests/ingestion/*.test.ts tests/security/*.test.ts",
+    "test:integration": "tsx --test tests/api/*.test.ts tests/rag/*.test.ts tests/chat/*.test.ts tests/supabase/*.test.ts",
+    "test:e2e": "tsx --test tests/e2e/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "audit:deps": "pnpm audit --prod",
+    "eval": "tsx eval/runner.ts --split=all --mode=offline",
+    "eval:dev": "tsx eval/runner.ts --split=dev --mode=offline",
+    "eval:test": "tsx eval/runner.ts --split=test --mode=offline",
+    "eval:live": "tsx eval/runner.ts --split=all --mode=live"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.50",
@@ -20,13 +31,14 @@
     "ics": "^3.12.0",
     "langfuse": "^3.38.20",
     "lucide-react": "^1.32.0",
-    "next": "16.3.1",
+    "next": "^16.4.0",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tesseract.js": "^7.0.0",
-    "uuid": "^14.0.2"
+    "uuid": "^14.0.2",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -36,8 +48,9 @@
     "@types/react-dom": "^19",
     "@types/uuid": "^11.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.3.1",
+    "eslint-config-next": "^16.4.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "packageManager": "pnpm@11.18.0"
