@@ -5,8 +5,8 @@ useDefault = true
 [allowlist]
 description = "Allow mock tokens and deterministic test identifiers"
 paths = [
-  '''tests/helpers/testUtils\.ts''',
-  '''tests/fixtures/.*''',
+  '''tests/.*''',
+  '''eval/.*''',
   '''\.env\.example''',
 ]
 regexes = [

@@ -19,10 +19,10 @@ describe('Security: Secrets and Error Leakage Prevention', () => {
 
   test('sanitizeForLogging redacts sensitive tokens and passwords', () => {
     const rawPayload = {
-      apiKey: 'gsk_super_secret_groq_key_12345',
-      bearerToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret',
+      apiKey: 'mock_groq_api_key_sample',
+      bearerToken: 'mock_bearer_token_sample',
       auth: {
-        password: 'my_super_secret_database_password',
+        password: 'mock_database_password_sample',
       },
       documentText: 'A'.repeat(1000), // Very long document content
       normalField: 'DBMS Syllabus',

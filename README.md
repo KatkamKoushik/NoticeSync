@@ -1,5 +1,7 @@
 # NoticeSync
 
+[![Quality Gate & Security Pipeline](https://github.com/KatkamKoushik/NoticeSync/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/KatkamKoushik/NoticeSync/actions/workflows/quality-gate.yml)
+
 NoticeSync is an academic intelligence and timeline synchronization system designed to ingest unstructured university circulars, course syllabi, and administrative announcements. The system extracts actionable academic deadlines, validates calendar dates, indexes document excerpts into a PostgreSQL vector database, cross-references proposed events against historical student records to detect schedule revisions and conflicts, and gates uncertain deductions behind mandatory human review.
 
 ---
@@ -184,10 +186,19 @@ NOTICE_SYNC_TEST_MODE=true
 > **Security Note:** The `SUPABASE_SERVICE_ROLE_KEY` must never be given a `NEXT_PUBLIC_` prefix and must never be exposed to browser bundles.
 
 ### 3. Database Schema Migration
-Execute the schema script in your Supabase SQL Editor:
+Execute the consolidated schema in your Supabase SQL Editor:
 ```bash
-# Apply initial schema and pgvector configuration
+# Apply consolidated schema and pgvector configuration
 supabase/schema.sql
+```
+
+Alternatively, apply the incremental versioned migrations sequentially:
+```bash
+# In Supabase SQL Editor or via Supabase CLI, run in order:
+# 1. supabase/migrations/20261010000000_initial_schema.sql
+# 2. supabase/migrations/20261011000000_security_hardening.sql
+# 3. supabase/migrations/20261012000000_ingestion_reliability.sql
+# 4. supabase/migrations/20261013000000_add_location_and_provenance.sql
 ```
 
 ### 4. Run Development Server
