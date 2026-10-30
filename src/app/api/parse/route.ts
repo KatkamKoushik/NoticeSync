@@ -3,6 +3,7 @@ import {
   extractEventsWithSchemaRetry,
   MalformedModelOutputError,
 } from '@/lib/ai';
+import { RawExtractedEvent } from '@/lib/validation/schemas';
 import { validateEvents } from '@/lib/validation';
 import {
   extractPdfWithProvenance,
@@ -256,14 +257,58 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 6. Call AI Extraction with Strict Schema Validation and Repair Retry
-    const textForAi = extractedText.substring(0, 15000);
+    // 6. Call AI Extraction with Strict Schema Validation and Multi-Section Partitioning
     const startTime = Date.now();
-    const rawEvents = await extractEventsWithSchemaRetry(textForAi);
+    let rawEvents: RawExtractedEvent[] = [];
+
+    if (extractedText.length <= 12000) {
+      const textForAi = extractedText;
+      rawEvents = await extractEventsWithSchemaRetry(textForAi);
+    } else {
+      // Partition large documents into overlapping sections (10,000 chars with 1,000 char overlap)
+      const SECTION_SIZE = 10000;
+      const SECTION_OVERLAP = 1000;
+      const MAX_SECTIONS = 5;
+      const sections: string[] = [];
+
+      for (
+        let start = 0;
+        start < extractedText.length && sections.length < MAX_SECTIONS;
+        start += (SECTION_SIZE - SECTION_OVERLAP)
+      ) {
+        sections.push(extractedText.substring(start, start + SECTION_SIZE));
+      }
+
+      const extractionLimiter = createConcurrencyLimiter(2);
+      const sectionResults = await Promise.all(
+        sections.map((sectionText) =>
+          extractionLimiter(() => extractEventsWithSchemaRetry(sectionText))
+        )
+      );
+
+      // Deduplicate overlapping events across sections by computed event hash
+      const seenEventHashes = new Set<string>();
+      for (const sectionEvents of sectionResults) {
+        for (const evt of sectionEvents) {
+          const hash = computeEventDedupHash({
+            title: evt.title,
+            date: evt.date,
+            type: evt.type,
+            course: evt.course,
+            sourceExcerpt: evt.sourceText,
+            description: evt.description,
+          });
+          if (!seenEventHashes.has(hash)) {
+            seenEventHashes.add(hash);
+            rawEvents.push(evt);
+          }
+        }
+      }
+    }
 
     traceAiCall(
       'Event Extraction',
-      { length: textForAi.length },
+      { length: Math.min(extractedText.length, 50000) },
       { count: rawEvents.length },
       {
         latencyMs: Date.now() - startTime,

@@ -96,7 +96,7 @@ export function resetTestDbStore() {
 export function createMockTestClient(userId: string): SupabaseClient {
   return {
     from: (table: string) => {
-      const filters: Array<{ col: string; val: unknown }> = [];
+      const filters: Array<{ col: string; val: unknown; op?: 'eq' | 'neq' }> = [];
 
       interface MockQueryBuilder {
         select: (cols?: string) => MockQueryBuilder;
@@ -123,6 +123,7 @@ export function createMockTestClient(userId: string): SupabaseClient {
           };
         };
         eq: (col: string, val: unknown) => MockQueryBuilder;
+        neq: (col: string, val: unknown) => MockQueryBuilder;
         order: () => MockQueryBuilder;
         limit: () => MockQueryBuilder;
         single: () => Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }>;
@@ -130,7 +131,10 @@ export function createMockTestClient(userId: string): SupabaseClient {
       }
 
       const matchFilters = (item: Record<string, unknown>) => {
-        return filters.every((f) => item[f.col] === f.val);
+        return filters.every((f) => {
+          if (f.op === 'neq') return item[f.col] !== f.val;
+          return item[f.col] === f.val;
+        });
       };
 
       const builder: MockQueryBuilder = {
@@ -251,7 +255,11 @@ export function createMockTestClient(userId: string): SupabaseClient {
           },
         }),
         eq: (col: string, val: unknown) => {
-          filters.push({ col, val });
+          filters.push({ col, val, op: 'eq' });
+          return builder;
+        },
+        neq: (col: string, val: unknown) => {
+          filters.push({ col, val, op: 'neq' });
           return builder;
         },
         order: () => builder,

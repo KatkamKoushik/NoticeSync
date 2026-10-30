@@ -14,6 +14,7 @@ type Document = {
 export default function AcademicMemoryView() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unauthenticated, setUnauthenticated] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -23,15 +24,17 @@ export default function AcademicMemoryView() {
         if (res.ok) {
           const data = await res.json();
           setDocuments(data.documents || []);
+          setUnauthenticated(false);
+        } else if (res.status === 401) {
+          setDocuments([]);
+          setUnauthenticated(true);
         } else {
-          setDocuments([
-            { id: '1', title: 'DBMS Syllabus', source_type: 'pdf', created_at: new Date().toISOString() },
-            { id: '2', title: 'Circular August', source_type: 'image', created_at: new Date().toISOString() },
-          ]);
+          setDocuments([]);
         }
       })
       .catch((e) => {
-        console.error(e);
+        console.error('Failed to fetch memory documents:', e);
+        if (active) setDocuments([]);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -75,10 +78,17 @@ export default function AcademicMemoryView() {
             <div className="h-20 bg-gray-800 rounded-xl"></div>
           </div>
         </div>
+      ) : unauthenticated ? (
+        <div className="text-center py-12 border border-dashed border-gray-700 rounded-xl p-6">
+          <Database className="mx-auto text-gray-600 mb-2" size={32} />
+          <p className="text-gray-300 font-medium">Sign in to view saved academic documents</p>
+          <p className="text-gray-500 text-xs mt-1">Uploaded syllabi and notices will be indexed here across sessions.</p>
+        </div>
       ) : documents.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-gray-700 rounded-xl">
           <Database className="mx-auto text-gray-600 mb-2" size={32} />
           <p className="text-gray-400">No documents in memory yet.</p>
+          <p className="text-gray-500 text-xs mt-1">Upload a syllabus or notice to build your academic memory.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

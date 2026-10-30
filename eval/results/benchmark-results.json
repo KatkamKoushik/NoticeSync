@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "timestamp": "2026-10-12T13:38:53.098Z",
+    "timestamp": "2026-10-30T20:06:58.745Z",
     "benchmarkVersion": "v1.0.0",
     "split": "all",
     "mode": "offline",
@@ -41,7 +41,7 @@
       "falseConfirmationCount": 0,
       "falseConfirmationRate": 0,
       "avgLatencyMs": 1,
-      "maxLatencyMs": 6
+      "maxLatencyMs": 7
     },
     "errors": []
   },
@@ -78,7 +78,7 @@
       "falseConfirmationCount": 3,
       "falseConfirmationRate": 1,
       "avgLatencyMs": 0,
-      "maxLatencyMs": 1
+      "maxLatencyMs": 0
     },
     "errors": [
       {

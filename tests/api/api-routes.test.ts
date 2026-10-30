@@ -4,6 +4,7 @@ import { POST as jobsPost, GET as jobsGet } from '../../src/app/api/jobs/route';
 import { POST as parsePost } from '../../src/app/api/parse/route';
 import { GET as memoryGet, DELETE as memoryDelete } from '../../src/app/api/memory/route';
 import { POST as briefPost } from '../../src/app/api/brief/route';
+import { GET as eventsGet } from '../../src/app/api/events/route';
 import {
   USER_A_TOKEN,
   USER_B_TOKEN,
@@ -164,5 +165,68 @@ describe('API Routes: Authentication, Ownership, Polling & Error Responses', () 
     const data = await res.json();
     assert.ok(data.brief);
     assert.ok(data.brief.length > 0);
+  });
+
+  test('GET /api/events retrieves confirmed and pending events with strict user scoping', async () => {
+    resetTestDbStore();
+
+    // Seed events for User A and User B
+    testDbStore.academic_events.push(
+      {
+        id: 'e0000000-0000-4000-8000-000000000001',
+        user_id: USER_A_ID,
+        title: 'User A Midterm Exam',
+        date: '2026-11-15',
+        type: 'Exam',
+        priority: 'Critical',
+        status: 'confirmed',
+        strict_deadline: true,
+      },
+      {
+        id: 'e0000000-0000-4000-8000-000000000002',
+        user_id: USER_A_ID,
+        title: 'User A Removed Event',
+        date: '2026-11-16',
+        type: 'Notice',
+        status: 'removed',
+      },
+      {
+        id: 'e0000000-0000-4000-8000-000000000003',
+        user_id: USER_B_ID,
+        title: 'User B Confidential Seminar',
+        date: '2026-11-20',
+        type: 'Notice',
+        status: 'confirmed',
+      }
+    );
+
+    // 1. User A retrieves events
+    const req = createTestRequest('/api/events', {
+      method: 'GET',
+      token: USER_A_TOKEN,
+    });
+    const res = await eventsGet(req);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+
+    // Must return User A's confirmed event, but NOT the removed event and NOT User B's event
+    assert.equal(Array.isArray(data.events), true);
+    assert.equal(data.events.length, 1);
+    assert.equal(data.events[0].id, 'e0000000-0000-4000-8000-000000000001');
+    assert.equal(data.events[0].title, 'User A Midterm Exam');
+    assert.equal(data.events[0].importance, 'high');
+    assert.equal(data.events[0].strictDeadline, true);
+
+    // 2. User B retrieves events
+    const reqB = createTestRequest('/api/events', {
+      method: 'GET',
+      token: USER_B_TOKEN,
+    });
+    const resB = await eventsGet(reqB);
+    assert.equal(resB.status, 200);
+    const dataB = await resB.json();
+    assert.equal(dataB.events.length, 1);
+    assert.equal(dataB.events[0].id, 'e0000000-0000-4000-8000-000000000003');
+    assert.equal(dataB.events[0].title, 'User B Confidential Seminar');
   });
 });

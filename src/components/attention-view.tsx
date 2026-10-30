@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Clock, AlertCircle } from 'lucide-react';
 import type { AcademicEvent } from '@/lib/types';
-import { differenceInDays, parseISO, isValid } from 'date-fns';
+import { differenceInDays, parseISO, isValid, format } from 'date-fns';
 
 export default function AttentionView({ events }: { events: AcademicEvent[] }) {
   // Filter for events that need attention
@@ -26,7 +26,7 @@ export default function AttentionView({ events }: { events: AcademicEvent[] }) {
     if (a.importance !== 'high' && b.importance === 'high') return 1;
     
     if (a.date && b.date) {
-        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      return a.date.localeCompare(b.date);
     }
     return 0;
   }).slice(0, 5); // Top 5
@@ -56,7 +56,9 @@ export default function AttentionView({ events }: { events: AcademicEvent[] }) {
             <div className="flex-1">
               <h3 className="font-semibold text-white text-base">{item.title}</h3>
               <p className="text-sm text-gray-400 mt-1">
-                {item.date ? new Date(item.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'No date'}
+                {item.date && isValid(parseISO(item.date))
+                  ? format(parseISO(item.date), 'EEE, MMM d')
+                  : 'No date'}
               </p>
               
               <div className="flex flex-wrap gap-2 mt-3">

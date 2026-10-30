@@ -27,17 +27,35 @@ export default function Home() {
 
   const jobState = useJobTracking(activeJobId);
 
-  // Check auth on mount
+  // Check auth on mount and load persisted events from database
   useEffect(() => {
+    const loadPersistedEvents = async () => {
+      if (isDemoMode) return;
+      try {
+        const res = await fetchWithAuth('/api/events');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.events) && data.events.length > 0) {
+            setConfirmedEvents(data.events);
+            setView((currentView) => (currentView === 'input' ? 'planner' : currentView));
+          }
+        }
+      } catch {
+        // Failed to fetch events or running offline
+      }
+    };
+
     supabase.auth.getSession().then(({ data }) => {
       if (data.session?.user) {
         setUser({ id: data.session.user.id, email: data.session.user.email });
+        loadPersistedEvents();
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email });
+        loadPersistedEvents();
       } else {
         setUser(null);
       }
@@ -46,7 +64,7 @@ export default function Home() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [isDemoMode]);
 
   // Sync job state when failed
   const jobStatus = jobState?.status;
@@ -189,6 +207,7 @@ export default function Home() {
     setStage('IDLE');
     setError(null);
     setExtractedEvents([]);
+    setActiveJobId(null);
   };
 
   const toggleDemoMode = () => {

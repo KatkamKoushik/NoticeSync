@@ -1,5 +1,6 @@
 import { streamText } from 'ai';
 import { createGroq } from '@ai-sdk/groq';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { retrieveRelevantChunks } from '@/lib/rag/storage';
 import { getAuthenticatedUser, AuthError } from '@/lib/auth/server';
 import { enforceRateLimit } from '@/lib/security/rateLimit';
@@ -13,21 +14,60 @@ import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-// Initialize Groq provider with configured fallback keys
-const keys = [
-  process.env.GROQ_API_KEY_1,
-  process.env.GROQ_API_KEY_2,
-  process.env.GROQ_API_KEY_3,
-  process.env.GROQ_API_KEY_4,
-  process.env.GROQ_API_KEY_5,
-  process.env.GROQ_API_KEY_6,
-].filter(Boolean) as string[];
-
-const CHAT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
-
 interface IncomingMessage {
   role?: string;
   content?: string;
+}
+
+function getChatModel() {
+  const provider = (process.env.LLM_PROVIDER || 'groq').toLowerCase().trim();
+
+  // 1. Google Gemini Provider
+  if (provider === 'gemini' || provider === 'google') {
+    const geminiKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GEMMA_API_KEY,
+      process.env.GEMMA_API_KEY_2,
+      process.env.GEMMA_API_KEY_3,
+    ].filter(Boolean) as string[];
+
+    if (geminiKeys.length > 0) {
+      const google = createGoogleGenerativeAI({ apiKey: geminiKeys[0] });
+      const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+      return { model: google(modelName), configured: true };
+    }
+  }
+
+  // 2. Groq Provider (Default)
+  const groqKeys = [
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_API_KEY_1,
+    process.env.GROQ_API_KEY_2,
+    process.env.GROQ_API_KEY_3,
+    process.env.GROQ_API_KEY_4,
+    process.env.GROQ_API_KEY_5,
+    process.env.GROQ_API_KEY_6,
+  ].filter(Boolean) as string[];
+
+  if (groqKeys.length > 0) {
+    const groq = createGroq({ apiKey: groqKeys[0] });
+    const modelName = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+    return { model: groq(modelName), configured: true };
+  }
+
+  // Fallback to Gemini if Groq keys are absent but Gemini key is present
+  const fallbackGeminiKeys = [
+    process.env.GEMINI_API_KEY,
+    process.env.GEMMA_API_KEY,
+  ].filter(Boolean) as string[];
+
+  if (fallbackGeminiKeys.length > 0) {
+    const google = createGoogleGenerativeAI({ apiKey: fallbackGeminiKeys[0] });
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    return { model: google(modelName), configured: true };
+  }
+
+  return { model: null, configured: false };
 }
 
 export async function POST(req: Request) {
@@ -128,7 +168,9 @@ ${
       process.env.NODE_ENV === 'test' ||
       process.env.NOTICE_SYNC_TEST_MODE === 'true';
 
-    if (keys.length === 0) {
+    const { model, configured } = getChatModel();
+
+    if (!configured || !model) {
       if (isTestMode) {
         const testResponse = hasSupportingDocuments
           ? `Based on your uploaded documents [Source: Academic Document], your midterm is confirmed on Nov 15.`
@@ -140,7 +182,7 @@ ${
       }
 
       return NextResponse.json(
-        { error: 'Chat AI service is currently unavailable. Please configure GROQ_API_KEY.' },
+        { error: 'Chat AI service is currently unavailable. Please configure GROQ_API_KEY or GEMINI_API_KEY.' },
         { status: 503 }
       );
     }
@@ -152,11 +194,6 @@ ${
         role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
         content: sanitizeString(m.content, 3000),
       }));
-
-    // Try first available key
-    const primaryKey = keys[0];
-    const groq = createGroq({ apiKey: primaryKey });
-    const model = groq(CHAT_MODEL);
 
     const result = streamText({
       model,

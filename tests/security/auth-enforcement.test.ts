@@ -5,6 +5,7 @@ import { POST as parsePost } from '../../src/app/api/parse/route';
 import { POST as chatPost } from '../../src/app/api/chat/route';
 import { POST as briefPost } from '../../src/app/api/brief/route';
 import { GET as memoryGet, DELETE as memoryDelete } from '../../src/app/api/memory/route';
+import { GET as eventsGet } from '../../src/app/api/events/route';
 import { createTestRequest } from '../helpers/testUtils';
 
 describe('Security: Authentication Enforcement', () => {
@@ -62,5 +63,13 @@ describe('Security: Authentication Enforcement', () => {
     const req = createTestRequest('/api/memory?id=a0000000-0000-4000-8000-000000000001', { method: 'DELETE' });
     const res = await memoryDelete(req);
     assert.equal(res.status, 401);
+  });
+
+  test('rejects unauthenticated GET /api/events with 401', async () => {
+    const req = createTestRequest('/api/events', { method: 'GET' });
+    const res = await eventsGet(req);
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.match(data.error, /Authentication required/i);
   });
 });
