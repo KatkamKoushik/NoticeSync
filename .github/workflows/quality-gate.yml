@@ -2,7 +2,7 @@ name: Quality Gate & Security Pipeline
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, 'fix/**', 'feat/**']
   pull_request:
     branches: [main, master, develop]
   workflow_dispatch:

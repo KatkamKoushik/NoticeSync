@@ -1,6 +1,12 @@
 # NoticeSync
 
 [![Quality Gate & Security Pipeline](https://github.com/KatkamKoushik/NoticeSync/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/KatkamKoushik/NoticeSync/actions/workflows/quality-gate.yml)
+[![Next.js](https://img.shields.io/badge/Next.js-16.4.3-black.svg?logo=next.js)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen.svg)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/Tests-104%20passed%20%7C%2027%20suites-success.svg)](https://github.com/KatkamKoushik/NoticeSync)
+[![Security Policy](https://img.shields.io/badge/Security-RLS%20%2B%20Rate%20Limited-informational.svg)](SECURITY.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 NoticeSync is an academic intelligence and timeline synchronization system designed to ingest unstructured university circulars, course syllabi, and administrative announcements. The system extracts actionable academic deadlines, validates calendar dates, indexes document excerpts into a PostgreSQL vector database, cross-references proposed events against historical student records to detect schedule revisions and conflicts, and gates uncertain deductions behind mandatory human review.
 
@@ -40,8 +46,9 @@ The following diagram illustrates the data flow from upload through validation, 
                   ▼                               ▼
    3. Chunking & Vector Ingestion       4. Structured LLM Extraction
    ├── 600-char chunks, 120 overlap     ├── System prompt with untrusted boundaries
-   ├── Google Gemini 768-dim embeddings ├── Zod schema validation
-   └── PostgreSQL pgvector upsert       └── Schema repair retry on malformed output
+   ├── Google Gemini 768-dim embeddings ├── Multi-section partition for text > 12k
+   └── PostgreSQL pgvector upsert       ├── Zod schema validation
+                                        └── Schema repair retry on malformed output
                   │                               │
                   └───────────────┬───────────────┘
                                   ▼
@@ -59,9 +66,15 @@ The following diagram illustrates the data flow from upload through validation, 
    └── Flagging: needsReview = true & conflictDetected = true on collisions
                                   │
                                   ▼
-   7. Human-in-the-Loop Review & Persistence
+   7. Human-in-the-Loop Review & Database Persistence
    ├── Verified student inspects extracted events & conflict warnings
    ├── Academic events committed to database (`academic_events`)
+   └── Idempotent deduplication via SHA-256 event fingerprinting
+                                  │
+                                  ▼
+   8. Schedule Persistence & Cross-Session Hydration
+   ├── Authenticated student retrieves confirmed plan (`/api/events`)
+   ├── Hydrates planner interface across browser reloads
    └── Grounded RAG Chat Copilot (`/api/chat`) with citations & abstention
 ```
 
@@ -74,10 +87,16 @@ The following diagram illustrates the data flow from upload through validation, 
 - Magic-byte validation verifies genuine file signatures prior to parsing, rejecting zero-byte or corrupt binaries before parser execution.
 - File names are sanitized to prevent directory traversal and path manipulation.
 
+### Multi-Section Syllabi Extraction
+- Long syllabi exceeding 12,000 characters are partitioned into overlapping 10,000-character windows with 1,000-character overlaps.
+- Extraction runs under bounded concurrency controls to respect API rate limits.
+- Extracted events are deduplicated across window boundaries using deterministic SHA-256 event hashing (`computeEventDedupHash`), ensuring late-semester examination dates located at the bottom of syllabi are never truncated.
+
 ### Deterministic Calendar Validation
 - Validates extracted dates strictly against the Gregorian calendar via `date-fns`.
 - Distinguishes valid ISO dates (`YYYY-MM-DD`), ambiguous dates, and impossible calendar dates.
 - An impossible date (such as February 30) is rejected, converted to `date: null`, and routed to human review rather than confirmed.
+- Frontend rendering uses timezone-resilient formatting to prevent UTC midnight date shifting across user timezones.
 
 ### Multi-Document Memory & Conflict Detection
 - Document chunks are stored alongside 768-dimensional embeddings in PostgreSQL using `pgvector`.
@@ -88,12 +107,14 @@ The following diagram illustrates the data flow from upload through validation, 
 - Events requiring manual confirmation are gated with `needsReview: true` and documented with explicit `reviewReason` strings.
 - Trigger conditions include: confidence score under 75%, ambiguous or pending dates, detected deadline revisions, and contradictory prior memory.
 
-### Grounded Academic Chat Copilot
-- Serves queries via `/api/chat` using context retrieved from the user's indexed document chunks.
+### Grounded Multi-Provider Chat Copilot
+- Serves conversational inquiries via `/api/chat` using context retrieved from the user's indexed document chunks.
+- Pluggable model routing supports both Google Gemini (`@ai-sdk/google`) and Groq (`@ai-sdk/groq`) based on `LLM_PROVIDER`.
 - Isolates untrusted document text within `<document_context untrusted="true">` boundaries to mitigate prompt injection.
 - Directs the model to cite supporting document titles (e.g., `[Source: Syllabus.pdf]`) and explicitly abstain when indexed documents do not contain evidence to answer the query.
 
-### Academic Memory Management
+### Schedule Persistence & Memory Lifecycle
+- Authenticated event retrieval endpoint (`/api/events`) loads confirmed and pending events directly from Supabase, restoring the student's academic planner across sessions.
 - Document overview and deletion endpoints (`/api/memory`).
 - Deleting an indexed document triggers cascading deletion of all associated chunks, vector embeddings, and linked academic events.
 
@@ -117,25 +138,30 @@ NoticeSync implements multi-tenant isolation and defense-in-depth security contr
   - Ingestion (`/api/parse`): 10 requests per minute per user.
   - Job initialization (`/api/jobs`): 30 requests per minute per user.
   - Chat copilot (`/api/chat`): 30 turns per minute per user.
+  - Event queries (`/api/events`): 60 requests per minute per user.
   - Memory queries (`/api/memory`): 60 requests per minute per user.
+  - Academic summaries (`/api/brief`): 20 requests per minute per user.
 - Requests exceeding quota receive HTTP `429 Too Many Requests` with a `Retry-After` header.
 
 ### Secrets Protection and Safe Error Masking
 - Unhandled server exceptions are masked via `safeErrorResponse`, returning generic status messages while redacting internal stack traces and database error codes.
 - Diagnostic loggers redact authentication tokens, service keys, and passwords before emission.
+- Automated secret scanning is enforced on every commit using Gitleaks (`.gitleaks.toml`).
 
 ---
 
 ## 5. Technology Stack
 
-- **Runtime & Framework:** Node.js (v20+ / v24), Next.js 16.4.0 (App Router, Turbopack)
+- **Runtime & Framework:** Node.js (v22+ / v24), Next.js 16.4.3 (App Router, Turbopack)
 - **Language & Types:** TypeScript 5 (Strict Mode enabled)
 - **Database & Vectors:** Supabase (PostgreSQL 15+, `pgvector` extension)
 - **Pluggable LLM Architecture:**
-  - Groq Hosted LLM (`openai/gpt-oss-20b`, `llama-3.3-70b-versatile` with 6-key fallback rotation)
+  - Groq Hosted LLM (`openai/gpt-oss-20b`, `llama-3.3-70b-versatile` with key rotation)
   - Google Gemini (`gemini-2.0-flash`, `gemini-1.5-flash`)
-  - Local Ollama / Gemma (`gemma2:9b`, optional local offline inference; fully optional backend)
+  - Local Ollama / Gemma (`gemma2:9b`, optional local offline inference)
   - Deterministic Mock Provider (for zero-cost offline testing and CI)
+- **AI SDK Frameworks:** Vercel AI SDK (`ai`), `@ai-sdk/google`, `@ai-sdk/groq`
+- **Application Monitoring:** `@sentry/nextjs` (v10.78.0)
 - **Embeddings:** Google Generative AI (`gemini-embedding-2`, 768 dimensions) & Deterministic Mock Embeddings
 - **Retrieval Engine:** Hybrid vector cosine similarity (`pgvector`) + lexical token matching with reciprocal score fusion
 - **Text & Media Parsers:** `pdf-parse` (with page-level provenance extraction), `tesseract.js` (OCR fallback)
@@ -147,7 +173,7 @@ NoticeSync implements multi-tenant isolation and defense-in-depth security contr
 ## 6. Local Setup and Installation
 
 ### Prerequisites
-- Node.js version 22.x or higher (Node 22.13+ required by pnpm 11)
+- Node.js version 22.x or higher (`node -v`)
 - Corepack or pnpm version 11.18.0 installed (`npm install -g pnpm@11.18.0`)
 - A Supabase project with the `pgvector` extension enabled
 
@@ -171,12 +197,16 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Groq AI Provider (Extraction & Summaries)
+# LLM Provider Selection: 'groq', 'gemini', or 'ollama' (default: groq)
+LLM_PROVIDER=groq
+
+# Groq AI Provider (Extraction & Chat)
 GROQ_MODEL=openai/gpt-oss-20b
 GROQ_API_KEY_1=your_groq_api_key
 GROQ_API_KEY_2=
 
-# Google Generative AI (768-Dimension Embeddings)
+# Google Generative AI (768-Dimension Embeddings & Gemini Provider)
+GEMINI_API_KEY=your_gemini_key
 GEMMA_API_KEY=your_google_ai_key
 
 # Test Mode Flag (Set to 'true' for offline deterministic testing without API keys)
@@ -211,7 +241,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 7. Verification and Testing
 
-NoticeSync includes an automated quality gate with 102 passing tests across 27 suites (104 tests total, 2 skipped when optional cloud credentials are not supplied):
+NoticeSync includes an automated quality gate with 104 passing tests across 27 suites (106 tests total, 2 skipped when optional cloud credentials are not supplied):
 
 ```bash
 # Run strict TypeScript compilation check
@@ -243,9 +273,9 @@ pnpm run build
 
 ## 8. Continuous Integration Quality Gate
 
-Automated checks are configured in [`.github/workflows/quality-gate.yml`](file:///.github/workflows/quality-gate.yml). The workflow triggers on every push and pull request to `main` and enforces:
+Automated checks are configured in [`.github/workflows/quality-gate.yml`](.github/workflows/quality-gate.yml). The workflow triggers on every push and pull request to `main` and enforces:
 
-1. **Secret Scanning:** Scans commits using Gitleaks (`gitleaks/gitleaks-action@v2`) configured via [`.gitleaks.toml`](file:///.gitleaks.toml).
+1. **Secret Scanning:** Scans commits using Gitleaks (`gitleaks/gitleaks-action@v2`) configured via [`.gitleaks.toml`](.gitleaks.toml).
 2. **Deterministic Installation:** Installs `pnpm@11.18.0` and enforces dependencies with `pnpm install --frozen-lockfile`.
 3. **Dependency Audit:** Runs `pnpm audit --prod --audit-level=high`.
 4. **Static Quality:** Enforces clean ESLint results and zero TypeScript compiler errors.
@@ -256,7 +286,7 @@ Automated checks are configured in [`.github/workflows/quality-gate.yml`](file:/
 
 ## 9. Machine Learning Evaluation Benchmark
 
-To evaluate NoticeSync's core extraction, date handling, retrieval, and conflict reasoning capabilities, an empirical benchmark suite was developed in [`eval/`](file:///eval/).
+To evaluate NoticeSync's core extraction, date handling, retrieval, and conflict reasoning capabilities, an empirical benchmark suite was developed in [`eval/`](eval/).
 
 ### Dataset and Methodology
 - **Benchmark Version:** `v1.0.0`
@@ -317,8 +347,11 @@ pnpm run eval:live
 | Text Chunking & Overlap | Implemented | Verified by unit tests in `tests/ingestion/chunking.test.ts` |
 | Page-Level Provenance Tracking | Implemented | Verified by `extractPdfWithProvenance` in `src/lib/ingestion/extractors.ts` |
 | Structured Location & Venue Extraction | Implemented | Verified by `tests/ingestion/location-provenance.test.ts` and migration `20261013000000` |
+| Multi-Section Large Syllabus Extraction | Implemented | Verified in `src/app/api/parse/route.ts` (10k window, 1k overlap, dedup hash) |
+| Schedule Persistence Across Sessions | Implemented | Verified by `GET /api/events` in `src/app/api/events/route.ts` and `tests/api/` |
 | 768-Dim Vector Embedding Storage | Implemented | Verified by schema in `supabase/schema.sql` and `tests/rag/` |
 | Pluggable Model Provider Architecture | Implemented | Verified by unit tests in `tests/ai/providers.test.ts` (Groq, Gemini, Ollama, Mock) |
+| Multi-Provider Grounded Copilot | Implemented | Verified in `src/app/api/chat/route.ts` via `@ai-sdk/google` and `@ai-sdk/groq` |
 | Optional Local Gemma Backend | Implemented | Ollama adapter configurable via `LLM_PROVIDER=ollama` without breaking app |
 | Hybrid Vector & Lexical Retrieval | Implemented | Verified by unit tests in `tests/rag/hybrid-retrieval.test.ts` |
 | Gregorian Calendar Date Validation | Implemented | Verified by tests in `tests/ai/date-validation.test.ts` |
@@ -342,6 +375,9 @@ pnpm run eval:live
 
 ---
 
-## 12. Security Inquiries and Vulnerability Reporting
+## 12. Security, License and Governance
 
-If you identify a security issue, vulnerability, or unexpected credential exposure in NoticeSync, please open a private GitHub Security Advisory or report it directly to the repository maintainers rather than filing a public issue.
+- **Security Policy:** Please review our [Security Policy](SECURITY.md) for vulnerability disclosure guidelines and SLA commitments.
+- **Contributing:** Read our [Contributing Guide](CONTRIBUTING.md) for code quality standards and local development instructions.
+- **Code of Conduct:** Review the [Code of Conduct](CODE_OF_CONDUCT.md) expected of all participants.
+- **License:** NoticeSync is open source licensed under the [MIT License](LICENSE).
