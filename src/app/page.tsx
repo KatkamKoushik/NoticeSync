@@ -21,16 +21,12 @@ export default function Home() {
   const [lastConfirmed, setLastConfirmed] = useState<AcademicEvent[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(() => (
-    typeof window !== 'undefined' ? window.location.search.includes('demo=true') : false
-  ));
 
   const jobState = useJobTracking(activeJobId);
 
   // Check auth on mount and load persisted events from database
   useEffect(() => {
     const loadPersistedEvents = async () => {
-      if (isDemoMode) return;
       try {
         const res = await fetchWithAuth('/api/events');
         if (res.ok) {
@@ -64,7 +60,7 @@ export default function Home() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [isDemoMode]);
+  }, []);
 
   // Sync job state when failed
   const jobStatus = jobState?.status;
@@ -86,62 +82,13 @@ export default function Home() {
     setStage('EXTRACTING');
     
     try {
-      // Demo Mode Support for offline presentations
-      if (typeof window !== 'undefined' && (window.location.search.includes('demo=true') || isDemoMode)) {
-        await new Promise((r) => setTimeout(r, 1000));
-        setStage('AI_PROCESSING');
-        await new Promise((r) => setTimeout(r, 1500));
-        setStage('VALIDATING');
-        await new Promise((r) => setTimeout(r, 1000));
-        
-        const demoEvents: AcademicEvent[] = [
-          {
-            id: 'demo-1',
-            title: 'Artificial Intelligence Mid-1',
-            date: '2026-08-25',
-            type: 'Exam',
-            description: 'Mid-1 Exam for AI. Postponed until further notice.',
-            confidence: 95,
-            importance: 'high',
-            strictDeadline: true,
-            deadlineChange: 'postponed',
-            additionalInformationPending: true,
-            actionRequired: true,
-            sourceText: 'Mid-1 examination postponed',
-            sourceType: 'pdf',
-            needsReview: true,
-          },
-          {
-            id: 'demo-2',
-            title: 'Data Warehousing Lab Record',
-            date: '2026-09-02',
-            type: 'Assignment',
-            description: 'Lab record submission deadline.',
-            confidence: 90,
-            importance: 'medium',
-            strictDeadline: true,
-            deadlineChange: 'none',
-            additionalInformationPending: false,
-            actionRequired: true,
-            sourceText: 'Lab record submission due September 2',
-            sourceType: 'pdf',
-            needsReview: false,
-          },
-        ];
-        
-        setExtractedEvents(demoEvents);
-        setStage('REVIEW');
-        setView('review');
-        return;
-      }
-
       // 1. Create Job with Authenticated Identity
       const jobRes = await fetchWithAuth('/api/jobs', { method: 'POST' });
       const jobData = await jobRes.json();
       
       if (!jobRes.ok) {
         if (jobRes.status === 401) {
-          throw new Error('Authentication required for multi-user storage. Please sign in or enable Demo Mode.');
+          throw new Error('Authentication required for multi-user storage. Please sign in to your Supabase account.');
         }
         throw new Error(jobData.error || 'Failed to initialize job');
       }
@@ -188,9 +135,29 @@ export default function Home() {
       setStage('ERROR');
       setActiveJobId(null);
     }
-  }, [isDemoMode]);
+  }, []);
 
-  const handleConfirmEvents = (events: AcademicEvent[]) => {
+  const handleConfirmEvents = async (events: AcademicEvent[]) => {
+    try {
+      await fetchWithAuth('/api/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          events: events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            date: e.date,
+            status: 'confirmed',
+            priority: e.importance,
+            hasConflict: e.hasConflict,
+            conflictDetails: e.conflictDetails,
+          })),
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to persist confirmed events to database', err);
+    }
+
     setConfirmedEvents((prev) => [...prev, ...events]);
     setLastConfirmed(events);
     setView('success');
@@ -210,20 +177,6 @@ export default function Home() {
     setActiveJobId(null);
   };
 
-  const toggleDemoMode = () => {
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (isDemoMode) {
-        url.searchParams.delete('demo');
-        setIsDemoMode(false);
-      } else {
-        url.searchParams.set('demo', 'true');
-        setIsDemoMode(true);
-      }
-      window.history.replaceState({}, '', url.toString());
-    }
-  };
-
   const isProcessing = ['EXTRACTING', 'AI_PROCESSING', 'VALIDATING'].includes(stage);
 
   return (
@@ -241,26 +194,27 @@ export default function Home() {
             </div>
             
             <div className="flex items-center gap-3">
-              {/* User / Demo Status */}
+              {/* User Authentication Status */}
               {user ? (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
                   <UserCheck size={13} />
                   <span className="truncate max-w-[120px]">{user.email || 'Authenticated'}</span>
                 </div>
-              ) : isDemoMode ? (
-                <button
-                  onClick={toggleDemoMode}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 hover:bg-amber-500/20 transition-colors"
-                >
-                  <span>Demo Mode Active</span>
-                </button>
               ) : (
                 <button
-                  onClick={toggleDemoMode}
+                  onClick={() => {
+                    const email = window.prompt('Enter your email to sign in via Supabase magic link:');
+                    if (email) {
+                      supabase.auth.signInWithOtp({ email }).then(({ error }) => {
+                        if (error) alert('Sign in error: ' + error.message);
+                        else alert('Check your email for the magic sign-in link.');
+                      });
+                    }
+                  }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300 hover:bg-white/10 transition-colors"
                 >
                   <LogIn size={13} />
-                  <span>Enable Demo</span>
+                  <span>Sign In</span>
                 </button>
               )}
 
@@ -347,12 +301,20 @@ export default function Home() {
                       <p className="text-sm mt-1 text-[#94a3b8]">
                         {error}
                       </p>
-                      {error.includes('Authentication required') && !isDemoMode && (
+                      {error.includes('Authentication required') && (
                         <button
-                          onClick={toggleDemoMode}
+                          onClick={() => {
+                            const email = window.prompt('Enter your email to sign in via Supabase magic link:');
+                            if (email) {
+                              supabase.auth.signInWithOtp({ email }).then(({ error }) => {
+                                if (error) alert('Sign in error: ' + error.message);
+                                else alert('Check your email for the magic sign-in link.');
+                              });
+                            }
+                          }}
                           className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors"
                         >
-                          Switch to Demo Mode
+                          Sign In to Supabase
                         </button>
                       )}
                     </div>

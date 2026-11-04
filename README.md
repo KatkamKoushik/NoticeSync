@@ -4,7 +4,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16.4.3-black.svg?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/Tests-135%20passed%20%7C%2032%20suites-success.svg)](https://github.com/KatkamKoushik/NoticeSync)
+[![Tests](https://img.shields.io/badge/Tests-144%20passed%20%7C%2038%20suites-success.svg)](https://github.com/KatkamKoushik/NoticeSync)
 [![Security](https://img.shields.io/badge/Security-RLS%20%2B%20CSRF%20%2B%20Zero%20Privileged%20Fallback-informational.svg)](docs/audit/SECURITY_AUDIT.md)
 [![Community Standards](https://img.shields.io/badge/Community%20Standards-100%25-brightgreen.svg)](.github/ISSUE_TEMPLATE/)
 [![Accessibility](https://img.shields.io/badge/Accessibility-WCAG%202.1%20AA-blue.svg)](ACCESSIBILITY.md)

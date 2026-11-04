@@ -39,7 +39,9 @@ export async function augmentEventWithMemory(
       for (const d of datesInChunk) {
         if (d !== newEvent.date) {
           newEvent.needsReview = true;
+          newEvent.hasConflict = true;
           const conflictMsg = `Prior document (${(chunk.metadata as Record<string, unknown>)?.title || 'Archive'}) specifies date ${d}, whereas this notice specifies ${newEvent.date}`;
+          newEvent.conflictDetails = conflictMsg;
           newEvent.reviewReason = (newEvent.reviewReason ? `${newEvent.reviewReason}; ` : '') + `Conflict: ${conflictMsg}`;
           newEvent.description = `[CONFLICT DETECTED: ${conflictMsg}]\n\n${newEvent.description}`;
           break;
@@ -124,7 +126,9 @@ Return ONLY a JSON object:
       // Conflict detection
       if (reasoningData.conflictDetected) {
         newEvent.needsReview = true;
+        newEvent.hasConflict = true;
         const reason = reasoningData.conflictReason || 'Historical document date mismatch detected';
+        newEvent.conflictDetails = reason;
         newEvent.reviewReason = (newEvent.reviewReason ? `${newEvent.reviewReason}; ` : '') +
           `Conflict: ${reason}`;
         newEvent.description = `[CONFLICT DETECTED: ${reason}]\n\n${newEvent.description}`;
@@ -157,7 +161,7 @@ function assignDeterministicPriority(event: AcademicEvent): AcademicEvent {
   }
 
   // Any event with pending information, missing date, or review reasons must be flagged
-  if (event.additionalInformationPending || event.date === null || event.reviewReason) {
+  if (event.additionalInformationPending || event.date === null || event.reviewReason || event.hasConflict) {
     event.needsReview = true;
   }
 

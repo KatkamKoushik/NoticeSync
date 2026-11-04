@@ -123,15 +123,23 @@ export function createMockTestClient(userId: string): SupabaseClient {
       interface MockQueryBuilder {
         select: (cols?: string) => MockQueryBuilder;
         insert: (record: Record<string, unknown> | Array<Record<string, unknown>>) => {
-          select: (cols?: string) => { single: () => Promise<{ data: Record<string, unknown>; error: null }> };
+          select: (cols?: string) => {
+            single: () => Promise<{ data: Record<string, unknown>; error: null }>;
+            then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) => Promise<unknown>;
+          };
           single: () => Promise<{ data: Record<string, unknown>; error: null }>;
+          then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) => Promise<unknown>;
         };
         upsert: (
           record: Record<string, unknown> | Array<Record<string, unknown>>,
           options?: { onConflict?: string }
         ) => {
-          select: (cols?: string) => { single: () => Promise<{ data: Record<string, unknown>; error: null }> };
+          select: (cols?: string) => {
+            single: () => Promise<{ data: Record<string, unknown>; error: null }>;
+            then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) => Promise<unknown>;
+          };
           single: () => Promise<{ data: Record<string, unknown>; error: null }>;
+          then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) => Promise<unknown>;
         };
         update: (updates: Record<string, unknown>) => {
           eq: (col1: string, val1: unknown) => {
@@ -177,15 +185,19 @@ export function createMockTestClient(userId: string): SupabaseClient {
             if (row.user_id && row.user_id !== userId) {
               throw new Error('RLS check violation: cannot insert row belonging to another user.');
             }
-            const newRow = { id: row.id || uuidv4(), ...row, user_id: userId };
+            const newRow = { ...row, id: row.id || uuidv4(), user_id: userId };
             testDbStore[table].push(newRow);
             created.push(newRow);
           }
           return {
             select: () => ({
               single: async () => ({ data: created[0], error: null }),
+              then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) =>
+                Promise.resolve({ data: created, error: null }).then(resolve),
             }),
             single: async () => ({ data: created[0], error: null }),
+            then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) =>
+              Promise.resolve({ data: created, error: null }).then(resolve),
           };
         },
         upsert: (
@@ -217,7 +229,7 @@ export function createMockTestClient(userId: string): SupabaseClient {
               };
               upserted.push(list[existingIdx]);
             } else {
-              const newRow = { id: row.id || uuidv4(), ...row, user_id: userId };
+              const newRow = { ...row, id: row.id || uuidv4(), user_id: userId };
               list.push(newRow);
               upserted.push(newRow);
             }
@@ -226,8 +238,12 @@ export function createMockTestClient(userId: string): SupabaseClient {
           return {
             select: () => ({
               single: async () => ({ data: upserted[0], error: null }),
+              then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) =>
+                Promise.resolve({ data: upserted, error: null }).then(resolve),
             }),
             single: async () => ({ data: upserted[0], error: null }),
+            then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) =>
+              Promise.resolve({ data: upserted, error: null }).then(resolve),
           };
         },
         update: (updates: Record<string, unknown>) => {

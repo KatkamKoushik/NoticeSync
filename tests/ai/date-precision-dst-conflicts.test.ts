@@ -42,6 +42,10 @@ describe('Schedule Integrity: Ambiguous Dates, DST Transitions & Conflicting Not
 
     const formattedDateOnly = formatEventDate('2026-11-15', 'UTC', 'date_only');
     assert.match(formattedDateOnly, /Nov 15, 2026/i);
+
+    // Fallback to UTC when an invalid timezone identifier is supplied
+    const fallbackFormatted = formatEventDate('2026-11-15T14:30:00Z', 'Invalid/Timezone', 'date_time');
+    assert.match(fallbackFormatted, /Nov 15, 2026/i);
   });
 
   test('detects conflicting dates from historical memory and mandates human review', async () => {

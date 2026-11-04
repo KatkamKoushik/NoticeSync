@@ -93,7 +93,7 @@ export function getEmbeddingProvider(requestedId?: string): EmbeddingProvider {
   }
 
   const google = new GoogleEmbeddingProvider();
-  if (google.isConfigured || isTestMode) {
+  if (google.isConfigured) {
     return google;
   }
 
