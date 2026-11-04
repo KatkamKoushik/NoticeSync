@@ -44,6 +44,7 @@ export function formatEventDate(
   if (!dateStr) return 'Date Pending (Needs Review)';
   try {
     const d = parseISO(dateStr);
+    const effectiveTz = isValidTimezone(timezone) ? timezone : 'UTC';
     if (precision === 'date_time') {
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone: effectiveTz,
