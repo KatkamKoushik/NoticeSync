@@ -109,7 +109,7 @@ describe('Tenant Isolation: Comprehensive Negative Cross-Tenant Matrix', () => {
     });
 
     const res = await eventsPost(req);
-    assert.equal(res.status, 200);
+    assert.ok(res.status === 200 || res.status === 201, `Status must be 200 or 201, got ${res.status}`);
     const data = await res.json();
     assert.ok(data.id);
 

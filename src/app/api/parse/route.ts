@@ -369,8 +369,9 @@ export async function POST(req: NextRequest) {
       const isDeadlineChanged =
         event.deadlineChange !== 'none' && event.deadlineChange !== 'unchanged';
 
-      const { error: eventError } = await db.from('academic_events').upsert(
+      const { data: savedEvent, error: eventError } = await db.from('academic_events').upsert(
         {
+          id: event.id,
           user_id: verifiedUserId,
           document_id: docId,
           dedup_hash: dedupHash,
@@ -392,12 +393,15 @@ export async function POST(req: NextRequest) {
         {
           onConflict: 'document_id,dedup_hash',
         }
-      );
+      ).select('id').single();
 
       if (eventError) {
         failedEvents++;
         logError(new Error(eventError.message), { step: 'saveEvent', userId: verifiedUserId });
       } else {
+        if (savedEvent && typeof (savedEvent as Record<string, unknown>).id === 'string') {
+          event.id = (savedEvent as Record<string, unknown>).id as string;
+        }
         storedEvents++;
       }
     }

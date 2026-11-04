@@ -92,6 +92,8 @@ export async function GET(req: NextRequest) {
         sourceType: 'text',
         status,
         needsReview: status === 'pending_review',
+        hasConflict: Boolean(row.has_conflict),
+        conflictDetails: (row.conflict_details as string) || null,
         dedupHash: (row.dedup_hash as string) || undefined,
       };
     });
@@ -108,7 +110,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * PATCH /api/events
- * Human Review & Confirmation: Updates, edits, or confirms an existing academic event.
+ * Human Review & Confirmation: Updates, edits, or confirms existing academic events.
+ * Supports single event ({ id / eventId, ... }) or batch confirmation ({ events: [...] }).
  * Strictly verifies and scopes mutation to the authenticated session user.
  */
 export async function PATCH(req: NextRequest) {
@@ -125,7 +128,65 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Valid JSON payload is required.' }, { status: 400 });
     }
 
-    const eventId = body.id;
+    // Support batch update when events array is supplied
+    if (Array.isArray(body.events)) {
+      let updatedCount = 0;
+      for (const item of body.events) {
+        if (!item || typeof item !== 'object') continue;
+        const targetId = item.id || item.eventId;
+        if (!targetId || !isValidUuid(targetId)) continue;
+
+        const itemUpdates: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+        };
+
+        if (item.status && ['pending_review', 'confirmed', 'removed'].includes(item.status)) {
+          itemUpdates.status = item.status;
+        }
+        if (item.confirm === true) {
+          itemUpdates.status = 'confirmed';
+        }
+        if (item.title && typeof item.title === 'string') {
+          itemUpdates.title = sanitizeString(item.title, 200);
+        }
+        if (item.location !== undefined) {
+          itemUpdates.location = typeof item.location === 'string' ? sanitizeString(item.location, 100) : null;
+        }
+        if (item.description !== undefined) {
+          itemUpdates.description = typeof item.description === 'string' ? sanitizeString(item.description, 1000) : '';
+        }
+        if (item.type && ['Exam', 'Assignment', 'Notice', 'Task'].includes(item.type)) {
+          itemUpdates.type = item.type;
+        }
+        if (item.date !== undefined) {
+          if (item.date === null || item.date === '') {
+            itemUpdates.date = null;
+            itemUpdates.information_pending = true;
+          } else {
+            const dateVal = validateCalendarDate(item.date);
+            if (dateVal.status === 'valid') {
+              itemUpdates.date = dateVal.date;
+              itemUpdates.information_pending = false;
+            }
+          }
+        }
+
+        const { error: batchErr } = await db
+          .from('academic_events')
+          .update(itemUpdates)
+          .eq('id', targetId)
+          .eq('user_id', userId);
+
+        if (!batchErr) {
+          updatedCount++;
+        }
+      }
+
+      return NextResponse.json({ success: true, updatedCount, message: `${updatedCount} events updated.` });
+    }
+
+    // Single event update path
+    const eventId = body.id || body.eventId;
     if (!eventId || !isValidUuid(eventId)) {
       return NextResponse.json({ error: 'Valid event UUID is required.' }, { status: 400 });
     }
@@ -255,7 +316,8 @@ export async function DELETE(req: NextRequest) {
 
 /**
  * POST /api/events
- * Creates a new manual academic event for the authenticated user.
+ * Creates new academic event(s) for the authenticated user.
+ * Supports single event ({ title, date, ... }) or batch creation ({ events: [...] }).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -267,7 +329,64 @@ export async function POST(req: NextRequest) {
     if (rateLimitResponse) return rateLimitResponse;
 
     const body = await req.json().catch(() => null);
-    if (!body || typeof body.title !== 'string' || body.title.trim().length === 0) {
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Valid JSON payload is required.' }, { status: 400 });
+    }
+
+    // Support batch event insertion
+    if (Array.isArray(body.events)) {
+      const recordsToInsert = [];
+      for (const item of body.events) {
+        if (!item || typeof item.title !== 'string' || item.title.trim().length === 0) continue;
+
+        let eventDate: string | null = null;
+        let infoPending = false;
+        if (item.date) {
+          const dateVal = validateCalendarDate(item.date);
+          if (dateVal.status === 'valid') {
+            eventDate = dateVal.date;
+          } else {
+            infoPending = true;
+          }
+        } else {
+          infoPending = true;
+        }
+
+        recordsToInsert.push({
+          id: item.id && isValidUuid(item.id) ? item.id : undefined,
+          user_id: userId,
+          title: sanitizeString(item.title, 200),
+          date: eventDate,
+          type: ['Exam', 'Assignment', 'Notice', 'Task'].includes(item.type) ? item.type : 'Notice',
+          description: typeof item.description === 'string' ? sanitizeString(item.description, 1000) : '',
+          priority: item.priority || 'Medium',
+          strict_deadline: Boolean(item.strictDeadline),
+          information_pending: infoPending,
+          status: item.status && ['pending_review', 'confirmed'].includes(item.status) ? item.status : 'confirmed',
+          source_excerpt: typeof item.sourceExcerpt === 'string' ? sanitizeString(item.sourceExcerpt, 500) : 'User Created',
+          location: typeof item.location === 'string' ? sanitizeString(item.location, 100) : null,
+        });
+      }
+
+      if (recordsToInsert.length === 0) {
+        return NextResponse.json({ error: 'No valid events provided in batch payload.' }, { status: 400 });
+      }
+
+      const { data, error } = await db
+        .from('academic_events')
+        .insert(recordsToInsert)
+        .select('id');
+
+      if (error) {
+        logError(new Error(error.message), { route: 'POST /api/events (batch)', userId });
+        return safeErrorResponse(error, 500, 'Failed to create academic events.');
+      }
+
+      return NextResponse.json({ success: true, count: data?.length || recordsToInsert.length }, { status: 201 });
+    }
+
+    // Single event insertion
+    if (typeof body.title !== 'string' || body.title.trim().length === 0) {
       return NextResponse.json({ error: 'Event title is required.' }, { status: 400 });
     }
 
@@ -286,6 +405,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await db
       .from('academic_events')
       .insert({
+        id: body.id && isValidUuid(body.id) ? body.id : undefined,
         user_id: userId,
         title: sanitizeString(body.title, 200),
         date: eventDate,
@@ -296,6 +416,7 @@ export async function POST(req: NextRequest) {
         information_pending: infoPending,
         status: 'confirmed',
         source_excerpt: 'User Created',
+        location: typeof body.location === 'string' ? sanitizeString(body.location, 100) : null,
       })
       .select('id')
       .single();
@@ -305,7 +426,7 @@ export async function POST(req: NextRequest) {
       return safeErrorResponse(error, 500, 'Failed to create academic event.');
     }
 
-    return NextResponse.json({ id: data.id, success: true });
+    return NextResponse.json({ id: data.id, success: true }, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

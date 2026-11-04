@@ -41,12 +41,16 @@ export function useJobTracking(jobId: string | null) {
         (payload) => {
           if (!isSubscribed) return;
           const newRecord = payload.new as Record<string, unknown>;
+          const newStatus = newRecord.status as JobStatus;
           setJobState({
-            status: newRecord.status as JobStatus,
+            status: newStatus,
             progress: typeof newRecord.progress === 'number' ? newRecord.progress : 0,
             currentStep: String(newRecord.current_step || ''),
             errorMessage: (newRecord.error_message as string) || null,
           });
+          if (['completed', 'failed', 'partial_success'].includes(newStatus)) {
+            clearInterval(pollInterval);
+          }
         }
       )
       .subscribe();
@@ -64,7 +68,7 @@ export function useJobTracking(jobId: string | null) {
               currentStep: data.job.currentStep,
               errorMessage: data.job.errorMessage,
             });
-            if (data.job.status === 'completed' || data.job.status === 'failed') {
+            if (['completed', 'failed', 'partial_success'].includes(data.job.status)) {
               clearInterval(pollInterval);
             }
           }

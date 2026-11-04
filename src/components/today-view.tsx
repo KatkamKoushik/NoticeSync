@@ -47,7 +47,7 @@ export default function TodayView({ events }: TodayViewProps) {
               className="mx-auto mb-3"
               style={{ color: 'var(--accent-green)' }}
             />
-            <h3 className="font-semibold text-lg mb-1">You&apos;re clear today 🎉</h3>
+            <h3 className="font-semibold text-lg mb-1">You&apos;re clear today</h3>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
               No academic events scheduled for today.
             </p>

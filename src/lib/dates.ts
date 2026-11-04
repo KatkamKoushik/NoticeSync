@@ -25,6 +25,15 @@ export function isValidTimezone(tz: string | null | undefined): boolean {
 }
 
 /**
+ * Helper to extract YYYY-MM-DD from an event date string (which may be date-only or date-time).
+ */
+export function normalizeDateString(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const match = dateStr.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : null;
+}
+
+/**
  * Format an event date for display with optional timezone and precision awareness.
  */
 export function formatEventDate(
@@ -34,8 +43,7 @@ export function formatEventDate(
 ): string {
   if (!dateStr) return 'Date Pending (Needs Review)';
   try {
-    const d = parseISO(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00Z`);
-    const effectiveTz = isValidTimezone(timezone) ? timezone : 'UTC';
+    const d = parseISO(dateStr);
     if (precision === 'date_time') {
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone: effectiveTz,
@@ -47,7 +55,6 @@ export function formatEventDate(
         minute: '2-digit',
         hour12: false,
       });
-      // Intl format is e.g. "Sun, Nov 15, 2026, 14:30" or "Sun, Nov 15, 2026 14:30"
       return formatter.format(d).replace(/,([^,]*)$/, '$1');
     }
     return format(d, 'EEE, MMM d, yyyy');
@@ -97,7 +104,8 @@ export function getTimezoneOffsetDetails(dateStr: string, timeZone: string = 'UT
  */
 export function getRelativeLabel(dateStr: string | null): string | null {
   if (!dateStr) return 'TBD';
-  const d = parseISO(dateStr);
+  const normalized = normalizeDateString(dateStr);
+  const d = parseISO(normalized || dateStr);
   const today = new Date();
 
   if (isToday(d)) return 'Today';
@@ -117,7 +125,7 @@ export function getRelativeLabel(dateStr: string | null): string | null {
  */
 export function sortEventsByPriority(events: AcademicEvent[]): AcademicEvent[] {
   const importanceValue = { high: 3, medium: 2, low: 1 };
-  
+
   return [...events].sort((a, b) => {
     // 1. Strict deadlines first
     if (a.strictDeadline !== b.strictDeadline) {
@@ -139,7 +147,7 @@ export function sortEventsByPriority(events: AcademicEvent[]): AcademicEvent[] {
  */
 export function getTodayEvents(events: AcademicEvent[]): AcademicEvent[] {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const todayEvents = events.filter((e) => e.date === todayStr);
+  const todayEvents = events.filter((e) => normalizeDateString(e.date) === todayStr);
   return sortEventsByPriority(todayEvents);
 }
 
@@ -149,8 +157,11 @@ export function getTodayEvents(events: AcademicEvent[]): AcademicEvent[] {
 export function getNextUpcomingEvent(events: AcademicEvent[]): AcademicEvent | null {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const future = events
-    .filter((e) => e.date && e.date > todayStr)
-    .sort((a, b) => (a.date as string).localeCompare(b.date as string));
+    .filter((e) => {
+      const normalized = normalizeDateString(e.date);
+      return normalized !== null && normalized > todayStr;
+    })
+    .sort((a, b) => (normalizeDateString(a.date) || '').localeCompare(normalizeDateString(b.date) || ''));
   return future[0] ?? null;
 }
 
@@ -165,14 +176,15 @@ export function getPendingEvents(events: AcademicEvent[]): AcademicEvent[] {
  * Group events by date, sorted chronologically.
  */
 export function groupEventsByDate(events: AcademicEvent[]): Map<string, AcademicEvent[]> {
-  const validEvents = events.filter(e => e.date !== null);
+  const validEvents = events.filter(e => e.date !== null && normalizeDateString(e.date) !== null);
   const sorted = [...validEvents].sort((a, b) => (a.date as string).localeCompare(b.date as string));
-  
+
   const map = new Map<string, AcademicEvent[]>();
   for (const evt of sorted) {
-    const existing = map.get(evt.date as string) || [];
+    const key = normalizeDateString(evt.date)!;
+    const existing = map.get(key) || [];
     existing.push(evt);
-    map.set(evt.date as string, existing);
+    map.set(key, existing);
   }
   return map;
 }
@@ -221,7 +233,6 @@ export function getWeeklyWorkload(events: AcademicEvent[]): WeekBucket[] {
     };
   });
 
-  // Heavy week logic: more strict deadlines or overall count
   for (const bucket of buckets) {
     bucket.isHeavy = bucket.count >= 4 || bucket.strictCount >= 2;
   }
