@@ -9,16 +9,17 @@ export const runtime = 'nodejs';
 /**
  * GET /api/memory
  * Retrieves documents stored in academic memory for the authenticated user.
+ * Strictly scoped to session user via userClient with RLS.
  */
 export async function GET(req: NextRequest) {
   try {
     const session = await getAuthenticatedUser(req);
     const userId = session.user.id;
+    const db = session.userClient;
 
     const rateLimitResponse = enforceRateLimit(`memory:get:${userId}`, 60);
     if (rateLimitResponse) return rateLimitResponse;
 
-    const db = session.userClient || (await import('@/lib/supabase/server')).supabaseServer;
     const { data: documents, error } = await db
       .from('documents')
       .select('id, title, source_type, created_at')
@@ -44,11 +45,16 @@ export async function GET(req: NextRequest) {
 /**
  * DELETE /api/memory?id=...
  * Deletes a document owned by the authenticated user.
+ * Strictly scoped to session user via userClient with RLS.
  */
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getAuthenticatedUser(req);
     const userId = session.user.id;
+    const db = session.userClient;
+
+    const rateLimitResponse = enforceRateLimit(`memory:delete:${userId}`, 30);
+    if (rateLimitResponse) return rateLimitResponse;
 
     const { searchParams } = new URL(req.url);
     const docId = searchParams.get('id');
@@ -57,7 +63,6 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Valid document ID is required.' }, { status: 400 });
     }
 
-    const db = session.userClient || (await import('@/lib/supabase/server')).supabaseServer;
     const { error } = await db
       .from('documents')
       .delete()

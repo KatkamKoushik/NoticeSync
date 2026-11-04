@@ -1,7 +1,7 @@
 # NoticeSync ML Pipeline Evaluation Report
 
 **Benchmark Version:** v1.0.0  
-**Execution Timestamp:** 2026-10-30T20:06:58.745Z  
+**Execution Timestamp:** 2026-11-04T19:14:34.136Z  
 **Evaluation Split:** ALL (11 documents)  
 **Execution Mode:** OFFLINE (Deterministic CI Mode)  
 **Model Configuration:**  

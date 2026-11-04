@@ -1,8 +1,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { supabaseServer } from '../supabase/server';
 import { getEmbedding } from './embeddings';
 import { requireValidUuid, SecurityValidationError } from '../validation/security';
 import { withRetry } from '../resilience/retry';
+import { createMockTestClient } from '../auth/server';
 
 export interface StoreChunkParams {
   userId: string;
@@ -30,6 +30,17 @@ export interface RetrieveParams {
   client?: SupabaseClient;
 }
 
+function resolveClient(client?: SupabaseClient, userId?: string): SupabaseClient {
+  if (client) return client;
+  if (process.env.NODE_ENV === 'test' || process.env.NOTICE_SYNC_TEST_MODE === 'true') {
+    return createMockTestClient(userId || '00000000-0000-4000-8000-000000000000');
+  }
+  throw new SecurityValidationError(
+    'User-scoped Supabase client is required for RAG operations. Privileged service role fallback is prohibited.',
+    403
+  );
+}
+
 /**
  * Stores an embedded document chunk with strict document ownership validation.
  * Uses upsert with unique key (document_id, chunk_index) for retry idempotency.
@@ -38,8 +49,7 @@ export interface RetrieveParams {
 export async function storeChunk(params: StoreChunkParams) {
   const userId = requireValidUuid(params.userId, 'userId');
   const documentId = requireValidUuid(params.documentId, 'documentId');
-
-  const db = params.client || supabaseServer;
+  const db = resolveClient(params.client, userId);
 
   // 1. Verify document exists and belongs to the specified userId
   const { data: doc, error: docError } = await db
@@ -135,7 +145,7 @@ export function computeLexicalScore(content: string, query: string): number {
  */
 export async function retrieveRelevantChunks(params: RetrieveParams): Promise<RetrievedChunk[]> {
   const userId = requireValidUuid(params.userId, 'userId');
-  const db = params.client || supabaseServer;
+  const db = resolveClient(params.client, userId);
 
   // Generate the embedding for the query with safe retry
   const queryEmbedding = await withRetry(

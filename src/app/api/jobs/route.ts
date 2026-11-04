@@ -9,13 +9,15 @@ export const runtime = 'nodejs';
 /**
  * POST /api/jobs
  * Creates a new processing job for the authenticated user.
- * Client-supplied user IDs are strictly ignored.
+ * Client-supplied user IDs are strictly ignored; scoped to session.user.id.
+ * Uses verified userClient with RLS.
  */
 export async function POST(req: NextRequest) {
   try {
-    // 1. Authenticate user from server-verified session
+    // 1. Authenticate user from server-verified session (enforces CSRF for cookie sessions)
     const session = await getAuthenticatedUser(req);
     const userId = session.user.id;
+    const db = session.userClient;
 
     // 2. Rate limit (30 requests/minute per user)
     const rateLimitResponse = enforceRateLimit(`jobs:create:${userId}`, 30);
@@ -37,8 +39,6 @@ export async function POST(req: NextRequest) {
       rawIdempotencyKey && rawIdempotencyKey.trim().length > 0
         ? rawIdempotencyKey.trim().substring(0, 128)
         : null;
-
-    const db = session.userClient || (await import('@/lib/supabase/server')).supabaseServer;
 
     // Check if an existing job matches the idempotency key for this user
     if (idempotencyKey) {
@@ -90,13 +90,14 @@ export async function POST(req: NextRequest) {
 /**
  * GET /api/jobs?jobId=...
  * Retrieves the status of a processing job with strict user ownership verification.
- * User A cannot view User B's job.
+ * User A cannot view User B's job. Uses verified userClient with RLS.
  */
 export async function GET(req: NextRequest) {
   try {
     // 1. Authenticate user from session
     const session = await getAuthenticatedUser(req);
     const userId = session.user.id;
+    const db = session.userClient;
 
     // 2. Validate jobId query parameter
     const { searchParams } = new URL(req.url);
@@ -106,8 +107,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Valid jobId parameter is required.' }, { status: 400 });
     }
 
+    // Rate limit polling (60 requests/minute per user)
+    const rateLimitResponse = enforceRateLimit(`jobs:get:${userId}`, 60);
+    if (rateLimitResponse) return rateLimitResponse;
+
     // 3. Query job strictly filtered by user_id
-    const db = session.userClient || (await import('@/lib/supabase/server')).supabaseServer;
     const { data: job, error } = await db
       .from('processing_jobs')
       .select('id, status, progress, current_step, error_message, updated_at')

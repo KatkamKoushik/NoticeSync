@@ -1,30 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser, AuthError } from '@/lib/auth/server';
 import { enforceRateLimit } from '@/lib/security/rateLimit';
-import { safeErrorResponse } from '@/lib/validation/security';
+import { isValidUuid, safeErrorResponse, sanitizeString } from '@/lib/validation/security';
+import { validateCalendarDate } from '@/lib/validation';
 import { logError } from '@/lib/observability';
-import type { AcademicEvent, EventType, Importance, DeadlineChange } from '@/lib/types';
+import type { AcademicEvent, EventType, Importance, DeadlineChange, EventStatus } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
 /**
  * GET /api/events
  * Retrieves confirmed and pending academic events for the authenticated student.
- * Strictly scoped to the authenticated session's user ID.
+ * Strictly scoped to the authenticated session's user ID via userClient with RLS.
  */
 export async function GET(req: NextRequest) {
   try {
     // 1. Authenticate user from session
     const session = await getAuthenticatedUser(req);
     const userId = session.user.id;
+    const db = session.userClient;
 
     // 2. Enforce Rate Limit (60 requests/minute per user)
     const rateLimitResponse = enforceRateLimit(`events:get:${userId}`, 60);
     if (rateLimitResponse) return rateLimitResponse;
 
     // 3. Query user-scoped events from database
-    const db = session.userClient || (await import('@/lib/supabase/server')).supabaseServer;
-
     const { searchParams } = new URL(req.url);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
     const statusFilter = searchParams.get('status');
@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
 
       const isDeadlineChange = Boolean(row.deadline_change);
       const deadlineChange: DeadlineChange = isDeadlineChange ? 'rescheduled' : 'none';
+      const status: EventStatus = (row.status as EventStatus) || 'pending_review';
 
       return {
         id: String(row.id),
@@ -77,13 +78,20 @@ export async function GET(req: NextRequest) {
         additionalInformationPending: Boolean(row.information_pending),
         sourceText: String(row.source_excerpt || ''),
         sourceExcerpt: (row.source_excerpt as string) || undefined,
+        provenance: {
+          documentId: (row.document_id as string) || null,
+          pageNumber: typeof row.page_number === 'number' ? row.page_number : null,
+          chunkIndex: typeof row.chunk_index === 'number' ? row.chunk_index : null,
+          rawSourceText: String(row.source_excerpt || ''),
+        },
         course: (row.course as string) || null,
         location: (row.location as string) || null,
         pageNumber: typeof row.page_number === 'number' ? row.page_number : null,
         chunkIndex: typeof row.chunk_index === 'number' ? row.chunk_index : null,
         documentId: (row.document_id as string) || null,
         sourceType: 'text',
-        needsReview: row.status === 'pending_review',
+        status,
+        needsReview: status === 'pending_review',
         dedupHash: (row.dedup_hash as string) || undefined,
       };
     });
@@ -94,6 +102,215 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     logError(error, { route: 'GET /api/events' });
+    return safeErrorResponse(error, 500);
+  }
+}
+
+/**
+ * PATCH /api/events
+ * Human Review & Confirmation: Updates, edits, or confirms an existing academic event.
+ * Strictly verifies and scopes mutation to the authenticated session user.
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getAuthenticatedUser(req);
+    const userId = session.user.id;
+    const db = session.userClient;
+
+    const rateLimitResponse = enforceRateLimit(`events:mutate:${userId}`, 30);
+    if (rateLimitResponse) return rateLimitResponse;
+
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Valid JSON payload is required.' }, { status: 400 });
+    }
+
+    const eventId = body.id;
+    if (!eventId || !isValidUuid(eventId)) {
+      return NextResponse.json({ error: 'Valid event UUID is required.' }, { status: 400 });
+    }
+
+    // Check ownership before updating
+    const { data: existing, error: findError } = await db
+      .from('academic_events')
+      .select('id, user_id, status')
+      .eq('id', eventId)
+      .eq('user_id', userId)
+      .single();
+
+    if (findError || !existing) {
+      return NextResponse.json({ error: 'Event not found or access denied.' }, { status: 404 });
+    }
+
+    const updates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (body.title && typeof body.title === 'string') {
+      updates.title = sanitizeString(body.title, 200);
+    }
+
+    if (body.date !== undefined) {
+      if (body.date === null || body.date === '') {
+        updates.date = null;
+        updates.information_pending = true;
+      } else {
+        const dateVal = validateCalendarDate(body.date);
+        if (dateVal.status !== 'valid') {
+          return NextResponse.json(
+            { error: dateVal.reason || 'Invalid calendar date provided.' },
+            { status: 400 }
+          );
+        }
+        updates.date = dateVal.date;
+        updates.information_pending = false;
+      }
+    }
+
+    if (body.status && ['pending_review', 'confirmed', 'removed'].includes(body.status)) {
+      updates.status = body.status;
+    }
+
+    if (body.confirm === true) {
+      updates.status = 'confirmed';
+    }
+
+    if (body.location !== undefined) {
+      updates.location = typeof body.location === 'string' ? sanitizeString(body.location, 100) : null;
+    }
+
+    if (body.description !== undefined) {
+      updates.description = typeof body.description === 'string' ? sanitizeString(body.description, 1000) : '';
+    }
+
+    if (body.type && ['Exam', 'Assignment', 'Notice', 'Task'].includes(body.type)) {
+      updates.type = body.type;
+    }
+
+    if (typeof body.strictDeadline === 'boolean') {
+      updates.strict_deadline = body.strictDeadline;
+    }
+
+    const { error: updateError } = await db
+      .from('academic_events')
+      .update(updates)
+      .eq('id', eventId)
+      .eq('user_id', userId);
+
+    if (updateError) {
+      logError(new Error(updateError.message), { route: 'PATCH /api/events', userId, eventId });
+      return safeErrorResponse(updateError, 500, 'Failed to update academic event.');
+    }
+
+    return NextResponse.json({ success: true, message: 'Event successfully updated.' });
+  } catch (error: unknown) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    logError(error, { route: 'PATCH /api/events' });
+    return safeErrorResponse(error, 500);
+  }
+}
+
+/**
+ * DELETE /api/events?id=...
+ * Removes an event owned by the authenticated student.
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getAuthenticatedUser(req);
+    const userId = session.user.id;
+    const db = session.userClient;
+
+    const rateLimitResponse = enforceRateLimit(`events:mutate:${userId}`, 30);
+    if (rateLimitResponse) return rateLimitResponse;
+
+    const { searchParams } = new URL(req.url);
+    const eventId = searchParams.get('id');
+
+    if (!eventId || !isValidUuid(eventId)) {
+      return NextResponse.json({ error: 'Valid event ID is required.' }, { status: 400 });
+    }
+
+    const { error } = await db
+      .from('academic_events')
+      .delete()
+      .eq('id', eventId)
+      .eq('user_id', userId);
+
+    if (error) {
+      logError(new Error(error.message), { route: 'DELETE /api/events', userId, eventId });
+      return safeErrorResponse(error, 500, 'Failed to delete academic event.');
+    }
+
+    return NextResponse.json({ success: true, message: 'Event removed from academic schedule.' });
+  } catch (error: unknown) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    logError(error, { route: 'DELETE /api/events' });
+    return safeErrorResponse(error, 500);
+  }
+}
+
+/**
+ * POST /api/events
+ * Creates a new manual academic event for the authenticated user.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getAuthenticatedUser(req);
+    const userId = session.user.id;
+    const db = session.userClient;
+
+    const rateLimitResponse = enforceRateLimit(`events:mutate:${userId}`, 30);
+    if (rateLimitResponse) return rateLimitResponse;
+
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body.title !== 'string' || body.title.trim().length === 0) {
+      return NextResponse.json({ error: 'Event title is required.' }, { status: 400 });
+    }
+
+    let eventDate: string | null = null;
+    let infoPending = false;
+    if (body.date) {
+      const dateVal = validateCalendarDate(body.date);
+      if (dateVal.status !== 'valid') {
+        return NextResponse.json({ error: dateVal.reason || 'Invalid date' }, { status: 400 });
+      }
+      eventDate = dateVal.date;
+    } else {
+      infoPending = true;
+    }
+
+    const { data, error } = await db
+      .from('academic_events')
+      .insert({
+        user_id: userId,
+        title: sanitizeString(body.title, 200),
+        date: eventDate,
+        type: ['Exam', 'Assignment', 'Notice', 'Task'].includes(body.type) ? body.type : 'Notice',
+        description: typeof body.description === 'string' ? sanitizeString(body.description, 1000) : '',
+        priority: body.priority || 'Medium',
+        strict_deadline: Boolean(body.strictDeadline),
+        information_pending: infoPending,
+        status: 'confirmed',
+        source_excerpt: 'User Created',
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      logError(new Error(error.message), { route: 'POST /api/events', userId });
+      return safeErrorResponse(error, 500, 'Failed to create academic event.');
+    }
+
+    return NextResponse.json({ id: data.id, success: true });
+  } catch (error: unknown) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    logError(error, { route: 'POST /api/events' });
     return safeErrorResponse(error, 500);
   }
 }

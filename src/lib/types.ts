@@ -12,10 +12,34 @@ export type DeadlineChange =
 
 export type Importance = "low" | "medium" | "high";
 
+export type DatePrecision =
+  | "date_only"
+  | "date_time"
+  | "tentative_range"
+  | "null_or_pending";
+
+export type EventStatus = "pending_review" | "confirmed" | "removed";
+
+export interface EventProvenance {
+  documentId?: string | null;
+  documentTitle?: string | null;
+  pageNumber?: number | null;
+  chunkIndex?: number | null;
+  rawSourceText: string;
+}
+
 export interface AcademicEvent {
   id: string;
   title: string;
-  date: string | null; // YYYY-MM-DD or null
+  date: string | null; // ISO YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss or null
+  time?: string | null; // HH:mm if specified
+  precision?: DatePrecision;
+  timezone?: string; // Default: 'UTC' or user's local timezone
+  isAllDay?: boolean;
+  isRecurring?: boolean;
+  recurrenceRule?: string | null; // e.g. 'weekly', 'biweekly'
+  hasConflict?: boolean;
+  conflictDetails?: string | null;
   type: EventType;
   description: string;
   confidence: number; // 1-100
@@ -28,6 +52,7 @@ export interface AcademicEvent {
   additionalInformationPending: boolean;
   sourceText: string;
   sourceExcerpt?: string;
+  provenance?: EventProvenance;
   pageNumber?: number | null;
   chunkIndex?: number | null;
   documentId?: string | null;
@@ -35,6 +60,7 @@ export interface AcademicEvent {
   course?: string | null;
   location?: string | null;
   sourceType: "pdf" | "image" | "text";
+  status?: EventStatus;
   needsReview: boolean;
   reviewReason?: string | null;
   dedupHash?: string;

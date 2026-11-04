@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { isValidUuid } from '../validation/security';
+import { enforceCsrf } from '../security/csrf';
 import { v4 as uuidv4 } from 'uuid';
 
 export class AuthError extends Error {
@@ -11,12 +12,15 @@ export class AuthError extends Error {
   }
 }
 
+export type AuthType = 'bearer' | 'cookie';
+
 export interface AuthenticatedSession {
   user: {
     id: string;
     email?: string;
   };
   token: string;
+  authType: AuthType;
   userClient: SupabaseClient;
 }
 
@@ -24,14 +28,19 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
+export interface ExtractedAuth {
+  token: string;
+  authType: AuthType;
+}
+
 /**
- * Extracts the bearer token from the Authorization header or cookies.
+ * Extracts authentication token and transport type from Authorization header or cookies.
  */
-export function extractBearerToken(req: Request): string | null {
+export function extractAuthToken(req: Request): ExtractedAuth | null {
   const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
   if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
     const token = authHeader.substring(7).trim();
-    if (token) return token;
+    if (token) return { token, authType: 'bearer' };
   }
 
   // Check cookies for Supabase auth tokens
@@ -51,23 +60,32 @@ export function extractBearerToken(req: Request): string | null {
           if (val.startsWith('[') || val.startsWith('{')) {
             const parsed = JSON.parse(val);
             if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
-              return parsed[0];
+              return { token: parsed[0], authType: 'cookie' };
             }
             if (parsed && typeof parsed.access_token === 'string') {
-              return parsed.access_token;
+              return { token: parsed.access_token, authType: 'cookie' };
             }
           }
         } catch {
           // Not JSON
         }
-        if (val && typeof val === 'string' && val.length > 20) {
-          return val;
+        if (val && typeof val === 'string' && val.length > 5) {
+          return { token: val, authType: 'cookie' };
         }
       }
     }
   }
 
   return null;
+}
+
+/**
+ * Extracts the bearer token from the Authorization header or cookies.
+ * Maintained for backward compatibility.
+ */
+export function extractBearerToken(req: Request): string | null {
+  const auth = extractAuthToken(req);
+  return auth ? auth.token : null;
 }
 
 /**
@@ -93,6 +111,10 @@ export function resetTestDbStore() {
   testDbStore.academic_events = [];
 }
 
+/**
+ * Creates an in-memory mock client that strictly simulates PostgreSQL Row Level Security (RLS).
+ * All queries and mutations are isolated to the specified userId.
+ */
 export function createMockTestClient(userId: string): SupabaseClient {
   return {
     from: (table: string) => {
@@ -120,17 +142,24 @@ export function createMockTestClient(userId: string): SupabaseClient {
         delete: () => {
           eq: (col1: string, val1: unknown) => {
             eq: (col2: string, val2: unknown) => Promise<{ data: null; error: null }>;
+            then: (resolve: (val: { data: null; error: null }) => unknown) => Promise<unknown>;
           };
         };
         eq: (col: string, val: unknown) => MockQueryBuilder;
         neq: (col: string, val: unknown) => MockQueryBuilder;
         order: () => MockQueryBuilder;
-        limit: () => MockQueryBuilder;
+        limit: (n: number) => MockQueryBuilder;
         single: () => Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }>;
         then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) => Promise<unknown>;
       }
 
+      let limitCount: number | null = null;
+
       const matchFilters = (item: Record<string, unknown>) => {
+        // Enforce RLS simulation: user can only see their own records
+        if (item.user_id && item.user_id !== userId) {
+          return false;
+        }
         return filters.every((f) => {
           if (f.op === 'neq') return item[f.col] !== f.val;
           return item[f.col] === f.val;
@@ -144,7 +173,11 @@ export function createMockTestClient(userId: string): SupabaseClient {
           const created: Array<Record<string, unknown>> = [];
           if (!testDbStore[table]) testDbStore[table] = [];
           for (const row of rows) {
-            const newRow = { id: row.id || uuidv4(), ...row, user_id: row.user_id || userId };
+            // RLS check on insert: cannot insert records for other users
+            if (row.user_id && row.user_id !== userId) {
+              throw new Error('RLS check violation: cannot insert row belonging to another user.');
+            }
+            const newRow = { id: row.id || uuidv4(), ...row, user_id: userId };
             testDbStore[table].push(newRow);
             created.push(newRow);
           }
@@ -168,18 +201,23 @@ export function createMockTestClient(userId: string): SupabaseClient {
           const list = testDbStore[table];
 
           for (const row of rows) {
-            const existingIdx = list.findIndex((item) =>
-              conflictCols.every((col) => item[col] === row[col])
+            if (row.user_id && row.user_id !== userId) {
+              throw new Error('RLS check violation: cannot upsert row belonging to another user.');
+            }
+            const existingIdx = list.findIndex(
+              (item) =>
+                item.user_id === userId &&
+                conflictCols.every((col) => item[col] === row[col])
             );
             if (existingIdx >= 0) {
               list[existingIdx] = {
                 ...list[existingIdx],
                 ...row,
-                user_id: row.user_id || list[existingIdx].user_id || userId,
+                user_id: userId,
               };
               upserted.push(list[existingIdx]);
             } else {
-              const newRow = { id: row.id || uuidv4(), ...row, user_id: row.user_id || userId };
+              const newRow = { id: row.id || uuidv4(), ...row, user_id: userId };
               list.push(newRow);
               upserted.push(newRow);
             }
@@ -198,6 +236,8 @@ export function createMockTestClient(userId: string): SupabaseClient {
               const applyUpdate = (extraCol?: string, extraVal?: unknown) => {
                 const list = testDbStore[table] || [];
                 for (const item of list) {
+                  // RLS simulation: only update records owned by this user
+                  if (item.user_id !== userId) continue;
                   const match1 = item[col1] === val1;
                   const match2 = extraCol ? item[extraCol] === extraVal : true;
                   if (match1 && match2) {
@@ -220,6 +260,8 @@ export function createMockTestClient(userId: string): SupabaseClient {
             const applyDelete = (extraCol?: string, extraVal?: unknown) => {
               if (testDbStore[table]) {
                 const toDelete = testDbStore[table].filter((item) => {
+                  // RLS simulation: only delete records owned by this user
+                  if (item.user_id !== userId) return false;
                   const match1 = item[col1] === val1;
                   const match2 = extraCol ? item[extraCol] === extraVal : true;
                   return match1 && match2;
@@ -263,7 +305,10 @@ export function createMockTestClient(userId: string): SupabaseClient {
           return builder;
         },
         order: () => builder,
-        limit: () => builder,
+        limit: (n: number) => {
+          limitCount = n;
+          return builder;
+        },
         single: async () => {
           const list = testDbStore[table] || [];
           const found = list.find(matchFilters);
@@ -273,7 +318,10 @@ export function createMockTestClient(userId: string): SupabaseClient {
           return { data: found, error: null };
         },
         then: (resolve: (val: { data: Array<Record<string, unknown>>; error: null }) => unknown) => {
-          const list = (testDbStore[table] || []).filter(matchFilters);
+          let list = (testDbStore[table] || []).filter(matchFilters);
+          if (limitCount !== null) {
+            list = list.slice(0, limitCount);
+          }
           return Promise.resolve(resolve({ data: list, error: null }));
         },
       };
@@ -282,8 +330,12 @@ export function createMockTestClient(userId: string): SupabaseClient {
     rpc: async (func: string, params: Record<string, unknown>) => {
       if (func === 'match_document_chunks') {
         const targetUserId = params.p_user_id;
+        // RLS check: cannot request chunks for another user
+        if (targetUserId !== userId) {
+          return { data: [], error: { message: 'Access denied: user isolation violation' } };
+        }
         const chunks = (testDbStore.document_chunks || []).filter(
-          (c) => c.user_id === targetUserId
+          (c) => c.user_id === userId
         );
         return { data: chunks, error: null };
       }
@@ -316,14 +368,23 @@ export function createUserScopedClient(token: string): SupabaseClient {
 
 /**
  * Verifies the caller's server-side session and returns the verified user identity.
- * 
- * Rejects unauthenticated requests and client-supplied user IDs.
+ * Rejects unauthenticated requests, invalid sessions, and CSRF violations.
  */
 export async function getAuthenticatedUser(req: Request): Promise<AuthenticatedSession> {
-  const token = extractBearerToken(req);
+  const authInfo = extractAuthToken(req);
 
-  if (!token) {
-    throw new AuthError('Authentication required. Missing Bearer token.', 401);
+  if (!authInfo || !authInfo.token) {
+    throw new AuthError('Authentication required. Missing Bearer token or session cookie.', 401);
+  }
+
+  const { token, authType } = authInfo;
+
+  // Enforce CSRF protection for cookie-authenticated state-changing requests
+  if (authType === 'cookie') {
+    const csrfResponse = enforceCsrf(req, authType);
+    if (csrfResponse) {
+      throw new AuthError('Cross-site request blocked by CSRF / Fetch Metadata policy.', 403);
+    }
   }
 
   // Handle deterministic test sessions in test or mock environments
@@ -337,6 +398,7 @@ export async function getAuthenticatedUser(req: Request): Promise<AuthenticatedS
     return {
       user: testUser,
       token,
+      authType,
       userClient,
     };
   }
@@ -369,12 +431,19 @@ export async function getAuthenticatedUser(req: Request): Promise<AuthenticatedS
       email: user.email,
     },
     token,
+    authType,
     userClient,
   };
 }
 
 /**
  * Returns the privileged Service Role client for trusted background operations.
+ *
+ * SECURITY DIRECTIVE:
+ * - This client bypasses PostgreSQL Row Level Security (RLS).
+ * - Keep this client restricted to administrative tasks and system scripts.
+ * - Under NO CIRCUMSTANCES should this client be used in user-facing endpoints
+ *   or as a fallback when user sessions fail.
  */
 export function getServiceRoleClient(): SupabaseClient {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {

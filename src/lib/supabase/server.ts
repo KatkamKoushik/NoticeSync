@@ -4,13 +4,13 @@ import { createMockTestClient } from '../auth/server';
 /**
  * Server-side Supabase client initialized with the Service Role Key.
  * 
- * SECURITY NOTICE:
- * - This client bypasses Row Level Security (RLS).
+ * SECURITY DIRECTIVE & LEAST-PRIVILEGE CONTRACT:
+ * - This client bypasses PostgreSQL Row Level Security (RLS).
  * - Keep this module server-only (never import in client components).
- * - In request handlers, prefer user-scoped clients (from `@/lib/auth/server`)
- *   which enforce RLS based on the verified session JWT.
- * - Always explicitly authorize the caller and verify resource ownership
- *   before performing any privileged operation with this client.
+ * - User-facing HTTP route handlers MUST use session-scoped clients
+ *   (`session.userClient` from `@/lib/auth/server`) to enforce tenant isolation.
+ * - Under NO CIRCUMSTANCES should this client be used as a fallback for user queries.
+ * - This client is reserved strictly for administrative tasks and schema migrations.
  */
 
 let cachedServerClient: SupabaseClient | null = null;
@@ -21,7 +21,7 @@ export function getSupabaseServerClient(): SupabaseClient {
 
   if (!url || !key) {
     if (process.env.NODE_ENV === 'test' || process.env.NOTICE_SYNC_TEST_MODE === 'true') {
-      // Return deterministic in-memory mock client for test environments
+      // In tests, return a mock client bound to a system id
       return createMockTestClient('00000000-0000-4000-8000-000000000000');
     }
     throw new Error('Supabase URL or SUPABASE_SERVICE_ROLE_KEY is not configured on the server.');
@@ -39,7 +39,7 @@ export function getSupabaseServerClient(): SupabaseClient {
   return cachedServerClient;
 }
 
-// Proxy wrapper for backward compatibility with existing server references
+// Proxy wrapper for administrative scripts only. User-facing routes must not use this.
 export const supabaseServer: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
     const client = getSupabaseServerClient();

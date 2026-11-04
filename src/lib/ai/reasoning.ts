@@ -3,6 +3,7 @@ import { retrieveRelevantChunks } from '../rag/storage';
 import { AcademicEvent, DeadlineChange } from '../types';
 import { requireValidUuid, sanitizeUntrustedDocumentContext } from '../validation/security';
 import { ReasoningOutputSchema, ReasoningOutput } from '../validation/schemas';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Cross-references a newly extracted event against the student's historical RAG memory
@@ -10,7 +11,8 @@ import { ReasoningOutputSchema, ReasoningOutput } from '../validation/schemas';
  */
 export async function augmentEventWithMemory(
   newEvent: AcademicEvent,
-  userId: string
+  userId: string,
+  client?: SupabaseClient
 ): Promise<AcademicEvent> {
   const validUserId = requireValidUuid(userId, 'userId');
 
@@ -21,6 +23,7 @@ export async function augmentEventWithMemory(
     userId: validUserId,
     matchThreshold: 0.45,
     matchCount: 4,
+    client,
   });
 
   if (!relevantChunks || relevantChunks.length === 0) {

@@ -13,6 +13,14 @@ import {
   ExtractionTimeoutError,
   PageProvenance,
 } from '@/lib/ingestion/extractors';
+import {
+  validateAndReadStream,
+  validateExtractedTextBounds,
+  PayloadTooLargeError,
+  MimeSpoofingError,
+  EncryptedFileError,
+  DecompressionBombError,
+} from '@/lib/ingestion/streamValidation';
 import { chunkText } from '@/lib/ingestion/chunking';
 import { storeChunk } from '@/lib/rag/storage';
 import { augmentEventWithMemory } from '@/lib/ai/reasoning';
@@ -20,7 +28,6 @@ import { logError, traceAiCall } from '@/lib/observability';
 import { getAuthenticatedUser, AuthError } from '@/lib/auth/server';
 import { enforceRateLimit } from '@/lib/security/rateLimit';
 import { isValidUuid, sanitizeFileName, safeErrorResponse } from '@/lib/validation/security';
-import { supabaseServer } from '@/lib/supabase/server';
 import { computeContentHash, computeEventDedupHash } from '@/lib/ingestion/hash';
 import {
   evaluateJobCompletion,
@@ -28,24 +35,25 @@ import {
   PipelineCompletionMetrics,
 } from '@/lib/jobs/stateMachine';
 import { createConcurrencyLimiter } from '@/lib/resilience/retry';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 
 const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_TEXT_LENGTH = 10000;
-const PDF_TYPES = ['application/pdf'];
-const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 export async function POST(req: NextRequest) {
   let activeJobId: string | null = null;
   let verifiedUserId: string | null = null;
+  let userScopedDb: SupabaseClient | null = null;
 
   try {
-    // 1. Authenticate user from server session
+    // 1. Authenticate user from server session (enforces CSRF for cookie auth)
     const session = await getAuthenticatedUser(req);
     verifiedUserId = session.user.id;
-    const db = session.userClient || supabaseServer;
+    userScopedDb = session.userClient;
+    const db = userScopedDb;
 
     // 2. Enforce Rate Limit (10 parses per minute per user)
     const rateLimitResponse = enforceRateLimit(`parse:${verifiedUserId}`, 10);
@@ -94,38 +102,23 @@ export async function POST(req: NextRequest) {
     if (pdfFile && pdfFile instanceof File) {
       sourceType = 'pdf';
       title = sanitizeFileName(pdfFile.name, 'Uploaded Syllabus.pdf');
-      if (!PDF_TYPES.includes(pdfFile.type)) {
-        return NextResponse.json({ error: 'Please upload a valid PDF file.' }, { status: 400 });
-      }
-      if (pdfFile.size > MAX_PDF_SIZE) {
-        return NextResponse.json(
-          { error: 'PDF file is too large. Maximum size is 10MB.' },
-          { status: 400 }
-        );
-      }
-      const buffer = Buffer.from(await pdfFile.arrayBuffer());
+      
+      // Enforce streaming byte limits, extension verification, MIME cross-check, encrypted PDF detection
+      const buffer = await validateAndReadStream(pdfFile, 'pdf', MAX_PDF_SIZE);
       const pdfResult = await extractPdfWithProvenance(buffer);
       extractedText = pdfResult.text;
       pageProvenance = pdfResult.pages;
+      validateExtractedTextBounds(extractedText, buffer.length);
     }
     // --- Image ---
     else if (imageFile && imageFile instanceof File) {
       sourceType = 'image';
       title = sanitizeFileName(imageFile.name, 'Notice Screenshot.png');
-      if (!IMAGE_TYPES.includes(imageFile.type)) {
-        return NextResponse.json(
-          { error: 'Please upload a valid image file (PNG, JPEG, WebP).' },
-          { status: 400 }
-        );
-      }
-      if (imageFile.size > MAX_IMAGE_SIZE) {
-        return NextResponse.json(
-          { error: 'Image file is too large. Maximum size is 5MB.' },
-          { status: 400 }
-        );
-      }
-      const buffer = Buffer.from(await imageFile.arrayBuffer());
+      
+      // Enforce streaming byte limits, extension verification, MIME cross-check
+      const buffer = await validateAndReadStream(imageFile, 'image', MAX_IMAGE_SIZE);
       extractedText = await extractImageText(buffer);
+      validateExtractedTextBounds(extractedText, buffer.length);
     }
     // --- Text ---
     else if (textInput && textInput.trim().length > 0) {
@@ -349,11 +342,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. Multi-document reasoning with bounded concurrency
+    // 7. Multi-document reasoning with bounded concurrency using userScopedDb
     const reasoningLimiter = createConcurrencyLimiter(2);
     const augmentedEvents = await Promise.all(
       events.map((event) =>
-        reasoningLimiter(() => augmentEventWithMemory(event, verifiedUserId!))
+        reasoningLimiter(() => augmentEventWithMemory(event, verifiedUserId!, db))
       )
     );
     events = augmentedEvents;
@@ -473,68 +466,55 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
 
-    const clientDb = (await import('@/lib/supabase/server')).supabaseServer;
-
-    if (err instanceof CorruptFileError) {
-      if (activeJobId && verifiedUserId) {
+    // Safe error update strictly using user-scoped client if user was verified
+    const safeJobUpdate = async (errorMsg: string) => {
+      if (activeJobId && verifiedUserId && userScopedDb) {
         await updateJobState({
           jobId: activeJobId,
           userId: verifiedUserId,
           step: 'Failed',
           progress: 0,
           status: 'failed',
-          errorMessage: err.message,
-          client: clientDb,
+          errorMessage: errorMsg,
+          client: userScopedDb,
         });
       }
+    };
+
+    if (err instanceof PayloadTooLargeError) {
+      await safeJobUpdate(err.message);
+      return NextResponse.json({ error: err.message }, { status: 413 });
+    }
+
+    if (err instanceof MimeSpoofingError || err instanceof EncryptedFileError) {
+      await safeJobUpdate(err.message);
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    if (err instanceof DecompressionBombError) {
+      await safeJobUpdate(err.message);
+      return NextResponse.json({ error: err.message }, { status: 422 });
+    }
+
+    if (err instanceof CorruptFileError) {
+      await safeJobUpdate(err.message);
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
     if (err instanceof ExtractionTimeoutError) {
-      if (activeJobId && verifiedUserId) {
-        await updateJobState({
-          jobId: activeJobId,
-          userId: verifiedUserId,
-          step: 'Failed',
-          progress: 0,
-          status: 'failed',
-          errorMessage: err.message,
-          client: clientDb,
-        });
-      }
+      await safeJobUpdate(err.message);
       return NextResponse.json({ error: err.message }, { status: 504 });
     }
 
     if (err instanceof MalformedModelOutputError) {
-      if (activeJobId && verifiedUserId) {
-        await updateJobState({
-          jobId: activeJobId,
-          userId: verifiedUserId,
-          step: 'Failed',
-          progress: 0,
-          status: 'failed',
-          errorMessage: 'AI model extraction output failed strict schema validation.',
-          client: clientDb,
-        });
-      }
+      await safeJobUpdate('AI model extraction output failed strict schema validation.');
       return NextResponse.json(
         { error: 'AI model produced malformed output: ' + err.message },
         { status: 422 }
       );
     }
 
-    if (activeJobId && verifiedUserId) {
-      await updateJobState({
-        jobId: activeJobId,
-        userId: verifiedUserId,
-        step: 'Failed',
-        progress: 0,
-        status: 'failed',
-        errorMessage: 'Processing encountered an unrecoverable error.',
-        client: clientDb,
-      });
-    }
-
+    await safeJobUpdate('Processing encountered an unrecoverable error.');
     logError(err, { route: '/api/parse', activeJobId });
     return safeErrorResponse(err, 500, 'Failed to process document.');
   }

@@ -19,6 +19,7 @@ export function createTestRequest(
   options: {
     method?: string;
     token?: string | null;
+    cookie?: string | null;
     body?: unknown;
     formData?: FormData;
     headers?: Record<string, string>;
@@ -29,6 +30,10 @@ export function createTestRequest(
 
   if (options.token) {
     headers.set('Authorization', `Bearer ${options.token}`);
+  }
+
+  if (options.cookie) {
+    headers.set('Cookie', options.cookie);
   }
 
   let requestBody: BodyInit | null = null;

@@ -1,7 +1,7 @@
 import { JobStatus } from '../types';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { supabaseServer } from '../supabase/server';
 import { logError } from '../observability';
+import { createMockTestClient } from '../auth/server';
 
 /**
  * Valid transitions between NoticeSync job statuses.
@@ -75,14 +75,23 @@ export interface UpdateJobOptions {
   client?: SupabaseClient;
 }
 
+function resolveJobClient(client?: SupabaseClient, userId?: string): SupabaseClient {
+  if (client) return client;
+  if (process.env.NODE_ENV === 'test' || process.env.NOTICE_SYNC_TEST_MODE === 'true') {
+    return createMockTestClient(userId || '00000000-0000-4000-8000-000000000000');
+  }
+  throw new Error('User-scoped Supabase client is required for job updates. Privileged fallback prohibited.');
+}
+
 /**
  * Updates a job with state transition enforcement.
  */
 export async function updateJobState(options: UpdateJobOptions): Promise<boolean> {
   const { jobId, userId, step, progress, status, errorMessage, client } = options;
-  const db = client || supabaseServer;
 
   try {
+    const db = resolveJobClient(client, userId);
+
     // 1. Fetch current status to enforce valid state transitions
     const { data: currentJob, error: fetchErr } = await db
       .from('processing_jobs')

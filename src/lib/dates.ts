@@ -9,22 +9,94 @@ import {
   isAfter,
   isBefore,
 } from 'date-fns';
-import type { AcademicEvent } from './types';
+import type { AcademicEvent, DatePrecision } from './types';
 
 /**
- * Format an event date for display.
+ * Validates whether a given timezone string is a recognized IANA timezone identifier.
  */
-export function formatEventDate(dateStr: string | null): string {
-  if (!dateStr) return "Date Pending";
-  const d = parseISO(dateStr);
-  return format(d, 'EEE, MMM d, yyyy');
+export function isValidTimezone(tz: string | null | undefined): boolean {
+  if (!tz) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Format an event date for display with optional timezone and precision awareness.
+ */
+export function formatEventDate(
+  dateStr: string | null,
+  timezone: string = 'UTC',
+  precision: DatePrecision = 'date_only'
+): string {
+  if (!dateStr) return 'Date Pending (Needs Review)';
+  try {
+    const d = parseISO(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00Z`);
+    const effectiveTz = isValidTimezone(timezone) ? timezone : 'UTC';
+    if (precision === 'date_time') {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: effectiveTz,
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      // Intl format is e.g. "Sun, Nov 15, 2026, 14:30" or "Sun, Nov 15, 2026 14:30"
+      return formatter.format(d).replace(/,([^,]*)$/, '$1');
+    }
+    return format(d, 'EEE, MMM d, yyyy');
+  } catch {
+    return 'Invalid Date';
+  }
+}
+
+/**
+ * Computes DST offset and status for a given ISO date string and IANA timezone.
+ */
+export function getTimezoneOffsetDetails(dateStr: string, timeZone: string = 'UTC'): {
+  timeZone: string;
+  formattedLocal: string;
+  offsetMinutes: number;
+} {
+  const d = parseISO(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00Z`);
+  const effectiveTz = isValidTimezone(timeZone) ? timeZone : 'UTC';
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: effectiveTz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+
+  const formattedLocal = formatter.format(d);
+
+  // Compute timezone offset relative to UTC
+  const utcDate = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const tzDate = new Date(d.toLocaleString('en-US', { timeZone: effectiveTz }));
+  const offsetMinutes = Math.round((tzDate.getTime() - utcDate.getTime()) / 60000);
+
+  return {
+    timeZone: effectiveTz,
+    formattedLocal,
+    offsetMinutes,
+  };
 }
 
 /**
  * Get a relative date label.
  */
 export function getRelativeLabel(dateStr: string | null): string | null {
-  if (!dateStr) return "TBD";
+  if (!dateStr) return 'TBD';
   const d = parseISO(dateStr);
   const today = new Date();
 
@@ -41,7 +113,7 @@ export function getRelativeLabel(dateStr: string | null): string | null {
 }
 
 /**
- * Sort events by importance (high -> medium -> low)
+ * Sort events by importance (high -> medium -> low) and priority
  */
 export function sortEventsByPriority(events: AcademicEvent[]): AcademicEvent[] {
   const importanceValue = { high: 3, medium: 2, low: 1 };
@@ -86,7 +158,7 @@ export function getNextUpcomingEvent(events: AcademicEvent[]): AcademicEvent | n
  * Get all events with null dates or additional information pending.
  */
 export function getPendingEvents(events: AcademicEvent[]): AcademicEvent[] {
-  return sortEventsByPriority(events.filter(e => e.date === null || e.additionalInformationPending));
+  return sortEventsByPriority(events.filter(e => e.date === null || e.additionalInformationPending || e.needsReview));
 }
 
 /**
